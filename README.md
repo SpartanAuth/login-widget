@@ -1,33 +1,55 @@
+# SpartanAuth Login Widget
+
+This is a fully functional widget, designed to use [SpartanAuth as the backend](https://www.spartanauth.com) for all the authentication endpoints. you can add to any of your frontend applications. It is packaged as a web-component and can be used in any modern browser.
+
 ## Usage
 
-Those templates dependencies are maintained via [pnpm](https://pnpm.io) via `pnpm up -Lri`.
-
-This is the reason you see a `pnpm-lock.yaml`. That being said, any package manager will work. This file can be safely be removed once you clone a template.
+### Include in your application
 
 ```bash
-$ npm install # or pnpm install or yarn install
+$ npm install @spartanauth/login-widget # or pnpm add @spartanauth/login-widget or yarn add @spartanauth/login-widget
 ```
 
-### Learn more on the [Solid Website](https://solidjs.com) and come chat with us on our [Discord](https://discord.com/invite/solidjs)
+Alternatively, you can use the CDN:
 
-## Available Scripts
+```html
+<link rel="stylesheet" href="https://cdn.spartanauth.com/login-widget/1.0.0/login-widget.js">
+```
+
+Then include the widget in your application's HTML:
+
+```html
+<spartan-login start-mode="webAuthn" locale="en"></spartan-login>
+```
+
+### Configure the widget
+
+TODO: Add the configuration information here.
+
+## Contributing
+
+### Available Scripts
 
 In the project directory, you can run:
 
-### `npm dev` or `npm start`
+```bash
+npm dev
+# or
+npm start
+```
 
-Runs the app in the development mode.<br>
+Runs the widget in the development mode.<br>
 Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
 
 The page will reload if you make edits.<br>
 
 ### `npm run build`
 
-Builds the app for production to the `dist` folder.<br>
-It correctly bundles Solid in production mode and optimizes the build for the best performance.
+Builds the widget for production to the `dist` folder.<br>
+It correctly bundles the Login Widget in production mode and optimizes the build for the best performance.
 
 The build is minified and the filenames include the hashes.<br>
-Your app is ready to be deployed!
+The login widget is ready to be deployed!
 
 ## Deployment
 
