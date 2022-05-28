@@ -1,0 +1,21 @@
+{
+  "@metadata": {
+    "authors": [
+      "Mason Payne"
+    ],
+    "last-updated": "2022-05-28",
+    "locale": "ja"
+  },
+  "sa-login": "ログイン",
+  "sa-username": "ユーザー名",
+  "sa-password": "パスワード",
+  "sa-use-password": "パスワードを使用する",
+  "sa-code": "コード",
+
+  "sa-remember": "私を覚えてますか",
+  "sa-forgot": "パスワードをお忘れですか？",
+  "sa-register": "登録",
+  "sa-error.login": "ユーザー名かパスワードが無効",
+  "sa-error.register": "ユーザー名かパスワードが無効",
+  "sa-error.unknown": "未知のエラー"
+}

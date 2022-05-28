@@ -1,0 +1,21 @@
+{
+  "@metadata": {
+    "authors": [
+      "Mason Payne"
+    ],
+    "last-updated": "2022-05-28",
+    "locale": "fr"
+  },
+  "sa-login": "Connexion",
+  "sa-username": "Nom d'utilisateur",
+  "sa-password": "Mot de passe",
+  "sa-use-password": "Utiliser le mot de passe",
+  "sa-code": "code à deux facteurs",
+
+  "sa-remember": "Souviens-toi de moi",
+  "sa-forgot": "Mot de passe oublié?",
+  "sa-register": "S'inscrire",
+  "sa-error.login": "Nom d'utilisateur ou mot de passe invalide",
+  "sa-error.register": "Nom d'utilisateur ou mot de passe invalide",
+  "sa-error.unknown": "Erreur inconnue"
+}
