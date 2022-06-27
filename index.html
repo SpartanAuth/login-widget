@@ -5,19 +5,46 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#000000" />
     <link rel="shortcut icon" type="image/ico" href="/src/assets/favicon.ico" />
-    <title>Solid App</title>
+    <title>SA Demo</title>
+      <style>
+          #root {
+              height: 100vh;
+              width: 100vw;
+              background-image: url("/src/assets/DJI_0293_edit.jpg");
+              background-size: cover;
+              display: grid;
+              place-items: center;
+          }
+      </style>
   </head>
   <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root">
-
-        <spartan-login start-mode="webAuthn" locale="fr"></spartan-login>
-        <spartan-login start-mode="webAuthn" locale="en"></spartan-login>
-        <spartan-login start-mode="webAuthn" locale="es"></spartan-login>
-        <spartan-login start-mode="webAuthn" locale="ja"></spartan-login>
-
-    </div>
-
+  <div id="root">
+      <div id="container">
+          <spartan-login start-mode="webAuthn" locale="en" redirect="/app.html" styles=".login-frame button {background-color: #00f000;}"></spartan-login>
+      </div>
+      <div>
+          <button onclick="changeLanguage()">Change Language</button>
+      </div>
+  </div>
+  <noscript>You need to enable JavaScript to run this app.</noscript>
+    <script>
+        let lang = 0;
+        function changeLanguage() {
+          let langList = ['en', 'fr','es','ja'];
+          lang = lang + 1;
+          if (lang >= langList.length) {
+            lang = 0;
+          }
+          let elem = document.querySelector('spartan-login');
+          let parent = elem.parentNode;
+          parent.removeChild(elem);
+          let newElem = document.createElement('spartan-login');
+          newElem.setAttribute('start-mode', 'webAuthn');
+          newElem.setAttribute('redirect', '/app.html');
+          newElem.setAttribute('locale', langList[lang]);
+          parent.appendChild(newElem);
+        }
+    </script>
     <script src="/src/index.tsx" type="module"></script>
   </body>
 </html>

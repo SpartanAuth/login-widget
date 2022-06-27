@@ -26,6 +26,8 @@ const style = `.login-frame {
   border: 1px solid #ccc;
   padding: 40px 40px;
   max-width: 350px;
+  min-width: 290px;
+  background-color: rgba(255,255,255,0.9);
 }
 
 
@@ -63,6 +65,7 @@ const defaultProps = {
   startMode: 'password',
   styles: "",
   locale: "en",
+  redirect: '/',
 };
 
 customElement("spartan-login", defaultProps, (props) => {
@@ -70,6 +73,7 @@ customElement("spartan-login", defaultProps, (props) => {
   const [username, setUsername] = createSignal("");
   const [password, setPassword] = createSignal("");
   const [errorMessage, setErrorMessage] = createSignal("");
+  const [redirect, setRedirect] = createSignal(props.redirect);
   const banana = new Banana('en', {
     messages: en
   });
@@ -80,9 +84,9 @@ customElement("spartan-login", defaultProps, (props) => {
   }
   let customStyles;
   try {
-    customStyles = JSON.parse(props.styles);
+    customStyles = props.styles;
   } catch(e) {
-    customStyles = {};
+    customStyles = '';
   }
   console.log(customStyles);
 
@@ -94,11 +98,39 @@ customElement("spartan-login", defaultProps, (props) => {
 
   function login() {
     console.log("login");
+    setErrorMessage("");
+    fetch("http://192.168.1.73:11000/api/v1/login/password", {
+      method: 'post',
+      mode: 'cors',
+      cache: 'no-cache',
+      body: JSON.stringify({
+        username: username(),
+        password: password(),
+        sectorID: '0ad5c3e5-0186-4557-8b32-4b36f247bf09', // TODO: this should be a value passed in as a param
+      })
+    }).then((response) => {
+      if (response.status === 200) {
+        return response.json();
+      } else {
+        throw response;
+      }
+    })
+    .then(data => {
+      console.log(data);
+      window.location.href = redirect();
+    }).catch((res) => {
+      res.json().then((data:any) => {
+        console.log(data.message);
+        setErrorMessage(data.message);
+      })
+      console.log(res);
+    });
   }
 
   return (
     <div class={'login-frame'}>
       <style>{style}</style>
+      <style>{customStyles}</style>
       <h1>{banana.i18n('sa-login')}</h1>
       {errorMessage && <span class={'error-message'}>{errorMessage}</span>}
       <input type="text"
