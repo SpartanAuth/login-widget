@@ -17,5 +17,13 @@
   "sa-register": "Register",
   "sa-error.login": "Invalid username or password",
   "sa-error.register": "Invalid username or password",
-  "sa-error.unknown": "Unknown error"
+  "sa-error.unknown": "Unknown error",
+
+  "sa-account-settings" : "Account Settings",
+  "sa-webauthn-security-keys" : "Your security keys",
+  "sa-add-security-key" : "Add security key",
+  "sa-webauthn-key-name" : "Key Name",
+  "sa-cancel": "Cancel",
+  "sa-no-security-keys": "No security keys",
+  "not-authenticated": "Not authenticated"
 }
