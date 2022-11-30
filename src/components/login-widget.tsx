@@ -2,6 +2,11 @@ import {createSignal, onMount} from "solid-js";
 import { customElement } from "solid-element";
 import { setupBanana } from './banana';
 
+import {
+  get,
+  parseRequestOptionsFromJSON,
+} from "@github/webauthn-json/browser-ponyfill";
+
 const style = `.login-frame {
   display: flex;
   flex-direction: column;
@@ -77,6 +82,51 @@ customElement("spartan-login", defaultProps, (props) => {
   function login() {
     console.log("login");
     setErrorMessage("");
+    if (currMode() === 'password') {
+      passwordLogin();
+    } else if (currMode() === 'webauthn') {
+      webauthnLogin();
+    }
+  }
+
+  function webauthnLogin() {
+    console.log("webauthnLogin");
+    fetch(`${props.domain}/api/v1/login/webauthn/begin`, {
+      method: 'POST',
+      mode: 'cors',
+      cache: 'no-cache',
+      body: JSON.stringify({
+        username: username(),
+        sectorID: props.sector,
+      })
+    }).then(response => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        throw new Error('Network response was not ok.');
+      }
+    }).then((data) => {
+      // Handle user token input here
+      console.log(data);
+      const options = parseRequestOptionsFromJSON(data.CredentialAssertion);
+      return get(options).then((pubKeyCredential) => {
+        const pubKeyBodyStr = JSON.stringify(pubKeyCredential)
+        let rawBody = JSON.parse(pubKeyBodyStr);
+        rawBody.transactionID = data.TransactionID;
+        return rawBody;
+      });
+    }).then((pubKeyResponse) => {
+      return fetch(`${props.domain}/api/v1/login/webauthn/finish`, {
+        method: 'POST',
+        mode: 'cors',
+        cache: 'no-cache',
+        body: JSON.stringify(pubKeyResponse)
+      });
+    }).then(handleLoginResponse);
+  }
+
+  function passwordLogin() {
+    console.log("password login");
     fetch(props.domain + "/api/v1/login/password", {
       method: 'post',
       mode: 'cors',
@@ -86,14 +136,18 @@ customElement("spartan-login", defaultProps, (props) => {
         password: password(),
         sectorID: props.sector,
       })
-    }).then((response) => {
-      if (response.status === 200) {
+    }).then(handleLoginResponse);
+  }
+
+  async function handleLoginResponse(response: Response) {
+    let promise = Promise.resolve(response);
+    promise.then((res) => {
+      if (response.ok) {
         return response.json();
       } else {
-        throw response;
+        throw new Error('Network response was not ok.');
       }
-    })
-    .then(data => {
+    }).then(data => {
       console.log(data);
       localStorage.setItem('spartan-token', data.token);
       window.location.href = redirect();
@@ -101,9 +155,12 @@ customElement("spartan-login", defaultProps, (props) => {
       res.json().then((data:any) => {
         console.log(data.message);
         setErrorMessage(data.message);
-      })
+      }).catch((e: Error) => {
+        console.log(e);
+      });
       console.log(res);
     });
+    return promise;
   }
 
   return (
@@ -124,13 +181,13 @@ customElement("spartan-login", defaultProps, (props) => {
                onInput={(e) => setPassword(e.currentTarget.value)}
         ></input>
       )}
-      {/*{ mode() === "webAuthn" && (*/}
-      {/*  <button onClick={() => setMode("text")}>Show password</button>*/}
-      {/*)}*/}
+      { currMode() === "webauthn" && (
+        <span></span>
+      )}
       { currMode() === "totp" && (
         <input type="text" placeholder={banana.i18n('sa-code')}></input>
       )}
-      <span class="checkbox-wrapper" onClick={() => setMode(currMode() === 'password' ? 'webAuthn' : 'password') }>
+      <span class="checkbox-wrapper" onClick={() => setMode(currMode() === 'password' ? 'webauthn' : 'password') }>
         <input type="checkbox" checked={currMode() === 'password'}></input>
         <span>&nbsp;{banana.i18n('sa-use-password')}</span>
       </span>

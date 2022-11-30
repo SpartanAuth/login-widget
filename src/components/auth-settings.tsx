@@ -1,8 +1,12 @@
 import {createSignal, onMount} from "solid-js";
-import { customElement } from "solid-element";
-import * as base64js from "base64-js";
-import { setupBanana } from './banana';
+import {customElement} from "solid-element";
+import {setupBanana} from './banana';
 import {getDecodedSpartanToken, getSpartanToken} from "./spartanToken";
+
+import {
+  create,
+  parseCreationOptionsFromJSON,
+} from "@github/webauthn-json/browser-ponyfill";
 
 const style = `.login-frame {
   display: flex;
@@ -129,7 +133,7 @@ customElement("spartan-account-settings", defaultProps, (props) => {
       }
     }).then(data => {
       console.log(data);
-      finishWebAuthnRegistration(data as BeginWebAuthnRegistrationResponse)
+      return finishWebAuthnRegistration(data as BeginWebAuthnRegistrationResponse)
     }).catch((res) => {
       res.json().then((data:any) => {
         setErrorMessage(data.message);
@@ -137,40 +141,27 @@ customElement("spartan-account-settings", defaultProps, (props) => {
     });
   }
 
-  function finishWebAuthnRegistration(beginResponse: BeginWebAuthnRegistrationResponse) {
-    return navigator.credentials.create(convertBeginWARegResOptionsToCredentialCreationOptions(beginResponse.Options)).then((credential) => {
-      console.log(credential);
-      if (!credential) {
-        throw new Error("No credential returned");
-      }
+  async function finishWebAuthnRegistration(beginResponse: BeginWebAuthnRegistrationResponse) {
+    // @ts-ignore
+    const options = parseCreationOptionsFromJSON(beginResponse.Options);
+    const credResponse = await create(options);
+    // converts the response properly to json
+    const initBodyStr = JSON.stringify(credResponse)
 
-      // some messy typescript stuff here.
-      let cred: any = credential as any;
+    // but we need to augment it with a transactionID
+    let rawBody = JSON.parse(initBodyStr);
+    rawBody.transactionID = beginResponse.TransactionID;
 
-      let attestationObject = new Uint8Array(cred.response.attestationObject);
-      let clientDataJSON = new Uint8Array(cred.response.clientDataJSON);
-      let rawId = new Uint8Array(cred.rawId);
-
-      return fetch(`${props.domain}/api/v1/webauthn/registration/finish`, {
-        method: 'post',
-        mode: 'cors',
-        cache: 'no-cache',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `bearer ${getSpartanToken()}`,
-        },
-        body: JSON.stringify({
-          id: cred.id,
-          rawId: bufferEncode(rawId),
-          type: credential.type,
-          response: {
-            attestationObject: bufferEncode(attestationObject),
-            clientDataJSON: bufferEncode(clientDataJSON),
-          },
-          transactionID: beginResponse.TransactionID,
-          keyName: newKeyName(),
-        })
-      })
+    // now send it to the server
+    return fetch(`${props.domain}/api/v1/webauthn/registration/finish`, {
+      method: 'post',
+      mode: 'cors',
+      cache: 'no-cache',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `bearer ${getSpartanToken()}`,
+      },
+      body: JSON.stringify(rawBody)
     }).then((response) => {
       if (response.status === 200) {
         return;
@@ -190,34 +181,6 @@ customElement("spartan-account-settings", defaultProps, (props) => {
 
   function getSecurityKeys() {
     // TODO: get current user account settings
-  }
-
-  // Encode an ArrayBuffer into a base64 string.
-  function bufferEncode(value: Uint8Array) {
-    return base64js.fromByteArray(value)
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=/g, "");
-  }
-
-  function convertBeginWARegResOptionsToCredentialCreationOptions(beginOptions: PublicKeyCreds): CredentialCreationOptions {
-    return {
-      publicKey: {
-        challenge: Uint8Array.from(beginOptions.publicKey.challenge, c => c.charCodeAt(0)),
-        rp: {
-          name: beginOptions.publicKey.rp.name,
-          id: beginOptions.publicKey.rp.id,
-        },
-        user: {
-          id: Uint8Array.from(beginOptions.publicKey.user.id, c => c.charCodeAt(0)),
-          name: beginOptions.publicKey.user.name,
-          displayName: beginOptions.publicKey.user.displayName,
-        },
-        pubKeyCredParams: beginOptions.publicKey.pubKeyCredParams,
-        timeout: beginOptions.publicKey.timeout,
-        attestation: beginOptions.publicKey.attestation,
-      }
-    };
   }
 
   return (

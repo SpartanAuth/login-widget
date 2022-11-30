@@ -15,6 +15,7 @@
     "vite-plugin-solid": "^2.2.6"
   },
   "dependencies": {
+    "@github/webauthn-json": "^2.0.1",
     "@types/node": "^18.7.14",
     "banana-i18n": "^2.3.3",
     "base64-js": "^1.5.1",
