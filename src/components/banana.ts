@@ -22,7 +22,7 @@ function setupBanana(locale: string): Banana {
   });
   if (locale !== 'en') {
     // @ts-ignore
-    banana.load(messages[props.locale], props.locale);
+    banana.load(messages[locale], locale);
     banana.setLocale(locale);
   }
   return banana;

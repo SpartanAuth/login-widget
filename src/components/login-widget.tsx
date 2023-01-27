@@ -6,6 +6,7 @@ import {
   get,
   parseRequestOptionsFromJSON,
 } from "@github/webauthn-json/browser-ponyfill";
+import {getDecodedSpartanToken} from "./spartanToken";
 
 const style = `.login-frame {
   display: flex;
@@ -73,13 +74,16 @@ customElement("spartan-login", defaultProps, (props) => {
   }
   console.log(customStyles);
 
-  // onMount(async () => {
-  //   const res = await fetch(`https://jsonplaceholder.typicode.com/photos?_limit=20`);
-  //   console.log(res.json());
-  //   // setPhotos(await res.json());
-  // });
+  onMount(async () => {
+    let token = getDecodedSpartanToken();
+    if (token && window.location.pathname !== props.redirect) {
+      window.location.href = props.redirect;
+      return;
+    }
+  })
 
-  function login() {
+  function login(e: Event) {
+    e.preventDefault();
     console.log("login");
     setErrorMessage("");
     if (currMode() === 'password') {
@@ -164,7 +168,7 @@ customElement("spartan-login", defaultProps, (props) => {
   }
 
   return (
-    <div class={'login-frame'}>
+    <form class={'login-frame'} onSubmit={login}>
       <style>{style}</style>
       <style>{customStyles}</style>
       <h1>{banana.i18n('sa-login')}</h1>
@@ -191,7 +195,7 @@ customElement("spartan-login", defaultProps, (props) => {
         <input type="checkbox" checked={currMode() === 'password'}></input>
         <span>&nbsp;{banana.i18n('sa-use-password')}</span>
       </span>
-      <button onClick={() => login()}>{banana.i18n('sa-login')}</button>
-    </div>
+      <button type="submit" onClick={login}>{banana.i18n('sa-login')}</button>
+    </form>
   );
 });
