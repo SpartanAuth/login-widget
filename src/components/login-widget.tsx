@@ -6,7 +6,7 @@ import {
   get,
   parseRequestOptionsFromJSON,
 } from "@github/webauthn-json/browser-ponyfill";
-import {getDecodedSpartanToken} from "./spartanToken";
+import {getDecodedSpartanToken, getSpartanToken} from "./spartanToken";
 
 const style = `.login-frame {
   display: flex;
@@ -154,6 +154,7 @@ customElement("spartan-login", defaultProps, (props) => {
     }).then(data => {
       console.log(data);
       localStorage.setItem('spartan-token', data.token);
+      localStorage.setItem('spartan-txid', data.transactionID);
       window.location.href = redirect();
     }).catch((res) => {
       res.json().then((data:any) => {

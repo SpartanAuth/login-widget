@@ -135,9 +135,13 @@ customElement("spartan-account-settings", defaultProps, (props) => {
       console.log(data);
       return finishWebAuthnRegistration(data as BeginWebAuthnRegistrationResponse)
     }).catch((res) => {
-      res.json().then((data:any) => {
-        setErrorMessage(data.message);
-      });
+      if (res.json) {
+        res.json().then((data: any) => {
+          setErrorMessage(data.message);
+        });
+      } else {
+        setErrorMessage(res);
+      }
     });
   }
 
