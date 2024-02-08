@@ -6,10 +6,15 @@ export function getDecodedSpartanToken(): SpartanToken | null {
   const token = localStorage.getItem(spartanTokenKey);
   let decodedToken = null;
   if (token) {
-    decodedToken = jwt_decode(token);
-    if ((decodedToken as SpartanToken).exp > getUTCSecondsSinceEpoc()) {
-      return decodedToken as SpartanToken;
-    } else {
+    try {
+      decodedToken = jwt_decode(token);
+      if ((decodedToken as SpartanToken).exp > getUTCSecondsSinceEpoc()) {
+        return decodedToken as SpartanToken;
+      } else {
+        localStorage.removeItem(spartanTokenKey);
+      }
+    } catch (error) {
+      console.error('Error decoding token', error);
       localStorage.removeItem(spartanTokenKey);
     }
   }

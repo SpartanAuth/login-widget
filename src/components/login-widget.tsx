@@ -46,7 +46,11 @@ const style = `.login-frame {
   .login-frame .error-message {
     color: red;
     // margin: 10px 0;
-  }`;
+  }
+  .centered-text {
+    text-align: center;
+  }
+  `;
 
 
 
@@ -65,6 +69,8 @@ customElement("spartan-login", defaultProps, (props) => {
   const [password, setPassword] = createSignal("");
   const [errorMessage, setErrorMessage] = createSignal("");
   const [redirect, setRedirect] = createSignal(props.redirect);
+  const [selfSignUpAllowed, setSelfSignUpAllowed] = createSignal(false);
+  const [signUpComplete, setSignUpComplete] = createSignal(false);
   const banana = setupBanana(props.locale);
   let customStyles;
   try {
@@ -80,7 +86,33 @@ customElement("spartan-login", defaultProps, (props) => {
       window.location.href = props.redirect;
       return;
     }
+    getSectorSettings();
   })
+
+  function getSectorSettings() {
+    fetch(`${props.domain}/api/v1/sectors/${props.sector}/publicsettings`, {
+      method: 'GET',
+      mode: 'cors',
+      cache: 'no-cache',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    }).then(response => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        throw new Error('Network response was not ok.');
+      }
+
+    }).then(data => {
+      console.log(data);
+      // if self-signup is enabled, show the signup button
+      setSelfSignUpAllowed(data.SelfSignUpAllowed);
+    }).catch((err: Error) => {
+      console.log(err);
+      setErrorMessage(err.message);
+    });
+  }
 
   function login(e: Event) {
     e.preventDefault();
@@ -91,6 +123,38 @@ customElement("spartan-login", defaultProps, (props) => {
     } else if (currMode() === 'webauthn') {
       webauthnLogin();
     }
+  }
+
+  function signup(e: Event) {
+    e.preventDefault();
+    console.log("signup");
+    setErrorMessage("");
+    setSignUpComplete(false);
+
+    fetch(`${props.domain}/api/v1/users`, {
+      method: 'POST',
+      mode: 'cors',
+      cache: 'no-cache',
+      body: JSON.stringify({
+        username: username(),
+        password: password(),
+        sectorID: props.sector,
+      })
+    }).then(response => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        throw new Error(banana.i18n('sa-error-creating-user'));
+      }
+    }).then(data => {
+      console.log(data);
+      setSignUpComplete(true);
+      setMode(props.startMode);
+    }).catch((err: Error) => {
+      setSignUpComplete(false);
+      setErrorMessage(err.message);
+      console.log(err);
+    });
   }
 
   function webauthnLogin() {
@@ -178,34 +242,52 @@ customElement("spartan-login", defaultProps, (props) => {
   }
 
   return (
-    <form class={'login-frame'} onSubmit={login}>
+    <form class={'login-frame'} onSubmit={(e) => {currMode() === 'sign-up' ? signup(e) : login(e); }}>
       <style>{style}</style>
       <style>{customStyles}</style>
       <h1>{banana.i18n('sa-login')}</h1>
       {errorMessage && <span class={'error-message'}>{errorMessage}</span>}
+      {signUpComplete() && (<span>{banana.i18n('sa-signup-complete')}</span>)}
       <input type="text"
              placeholder={banana.i18n('sa-username')}
              value={username()}
              onInput={(e) => setUsername(e.currentTarget.value)}
       ></input>
-      { currMode() === "password" && (
+      { currMode() !== "sign-up" && (
+        <>
+          {currMode() === "password" && (
+            <input type="password"
+                   placeholder={banana.i18n('sa-password')}
+                   value={password()}
+                   onInput={(e) => setPassword(e.currentTarget.value)}
+            ></input>
+          )}
+          {currMode() === "webauthn" && (
+            <span></span>
+          )}
+          {currMode() === "totp" && (
+            <input type="text" placeholder={banana.i18n('sa-code')}></input>
+          )}
+          <span class={"checkbox-wrapper"}
+                onClick={() => setMode(currMode() === 'password' ? 'webauthn' : 'password')}>
+            <input type="checkbox" checked={currMode() === 'password'}></input>
+            <span>&nbsp;{banana.i18n('sa-use-password')}</span>
+          </span>
+        </>
+      )}
+
+      {currMode() === "sign-up" && (
         <input type="password"
-               placeholder={banana.i18n('sa-password')}
-               value={password()}
-               onInput={(e) => setPassword(e.currentTarget.value)}
+           placeholder={banana.i18n('sa-password')}
+           value={password()}
+           onInput={(e) => setPassword(e.currentTarget.value)}
         ></input>
       )}
-      { currMode() === "webauthn" && (
-        <span></span>
+
+      <button type="submit">{currMode() === 'sign-up' ? banana.i18n('sa-signup') : banana.i18n('sa-login')}</button>
+      {selfSignUpAllowed() && (
+        <a class={'centered-text'} href="#" onClick={() => currMode() === 'sign-up' ? setMode(props.startMode) : setMode('sign-up')}>{currMode() === 'sign-up' ? banana.i18n('sa-back') : banana.i18n('sa-signup')}</a>
       )}
-      { currMode() === "totp" && (
-        <input type="text" placeholder={banana.i18n('sa-code')}></input>
-      )}
-      <span class="checkbox-wrapper" onClick={() => setMode(currMode() === 'password' ? 'webauthn' : 'password') }>
-        <input type="checkbox" checked={currMode() === 'password'}></input>
-        <span>&nbsp;{banana.i18n('sa-use-password')}</span>
-      </span>
-      <button type="submit" onClick={login}>{banana.i18n('sa-login')}</button>
     </form>
   );
 });

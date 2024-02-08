@@ -3,7 +3,7 @@
     "authors": [
       "Mason Payne"
     ],
-    "last-updated": "2022-05-28",
+    "last-updated": "2024-01-08",
     "locale": "en"
   },
   "sa-login": "Login",
@@ -11,6 +11,10 @@
   "sa-password": "Password",
   "sa-use-password": "Use Password",
   "sa-code": "Code",
+  "sa-signup": "Sign up",
+  "sa-signup-complete": "Sign up complete",
+  "sa-back": "Back",
+  "sa-error-creating-user": "Error creating user.",
 
   "sa-remember": "Remember me",
   "sa-forgot": "Forgot your password?",
