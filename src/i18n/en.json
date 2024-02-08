@@ -22,6 +22,7 @@
   "sa-account-settings" : "Account Settings",
   "sa-webauthn-security-keys" : "Your security keys",
   "sa-add-security-key" : "Add security key",
+  "webauthn-not-enrolled": "WebAuthn not enrolled",
   "sa-webauthn-key-name" : "Key Name",
   "sa-cancel": "Cancel",
   "sa-no-security-keys": "No security keys",

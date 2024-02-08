@@ -107,7 +107,13 @@ customElement("spartan-login", defaultProps, (props) => {
       if (response.ok) {
         return response.json();
       } else {
-        throw new Error('Network response was not ok.');
+        // handle 401
+        if (response.status === 401) {
+          setMode('password');
+          setErrorMessage(banana.i18n('webauthn-not-enrolled'));
+          throw new Error(banana.i18n('webauthn-not-enrolled'));
+        }
+        throw new Error(`${response.status} ${response.statusText}: Network response was not ok.`);
       }
     }).then((data) => {
       // Handle user token input here
@@ -126,7 +132,10 @@ customElement("spartan-login", defaultProps, (props) => {
         cache: 'no-cache',
         body: JSON.stringify(pubKeyResponse)
       });
-    }).then(handleLoginResponse);
+    }).then(handleLoginResponse).catch((err: Error) => {
+      setErrorMessage(err.message);
+      console.log(err);
+    });
   }
 
   function passwordLogin() {
