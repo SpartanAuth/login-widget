@@ -106,26 +106,41 @@ customElement("spartan-account-settings", defaultProps, (props) => {
 
     }
 
-    // TODO: get current user account settings
-    // const res = await fetch(`https://jsonplaceholder.typicode.com/photos?_limit=20`);
-    // console.log(res.json());
-    // setPhotos(await res.json());
+    // get current user account settings
+    getProfile().then((data) => {
+      // TODO: display this data
+      console.log(data);
+    });
+
+    beginOTPRegistration('gomas.bmw@gmail.com', 'EMAIL').then((data) => {
+      console.log(data);
+    });
   });
 
-  function beginWebAuthnRegistration() {
-    fetch(`${props.domain}/api/v1/webauthn/registration/begin`, {
-      method: 'post',
+  async function getProfile() {
+    const res = await fetch(`${props.domain}/api/v1/users/self`, getFetchInit('get'));
+    return await res.json();
+  }
+
+  function getFetchInit(method='get'): RequestInit {
+    return {
+      method: method,
       mode: 'cors',
       cache: 'no-cache',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application',
         'Authorization': `bearer ${getSpartanToken()}`,
-      },
-      body: JSON.stringify({
-        keyName: newKeyName(),
-        sectorID: props.sector,
-      })
-    }).then((response) => {
+      }
+    };
+  }
+
+  function beginWebAuthnRegistration() {
+    let requestInit = getFetchInit('post');
+    requestInit.body = JSON.stringify({
+      keyName: newKeyName(),
+      sectorID: props.sector,
+    });
+    fetch(`${props.domain}/api/v1/webauthn/registration/begin`, requestInit).then((response) => {
       if (response.status === 200) {
         return response.json();
       } else {
@@ -156,17 +171,10 @@ customElement("spartan-account-settings", defaultProps, (props) => {
     let rawBody = JSON.parse(initBodyStr);
     rawBody.transactionID = beginResponse.TransactionID;
 
+    let requestInit = getFetchInit('post');
+    requestInit.body = JSON.stringify(rawBody);
     // now send it to the server
-    return fetch(`${props.domain}/api/v1/webauthn/registration/finish`, {
-      method: 'post',
-      mode: 'cors',
-      cache: 'no-cache',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `bearer ${getSpartanToken()}`,
-      },
-      body: JSON.stringify(rawBody)
-    }).then((response) => {
+    return fetch(`${props.domain}/api/v1/webauthn/registration/finish`, requestInit).then((response) => {
       if (response.status === 200) {
         return;
       } else {
@@ -183,8 +191,27 @@ customElement("spartan-account-settings", defaultProps, (props) => {
     });
   }
 
-  function getSecurityKeys() {
+  async function getSecurityKeys() {
     // TODO: get current user account settings
+  }
+
+  async function beginOTPRegistration(destination: string, type: 'EMAIL' | 'SMS') {
+    let requestInit = getFetchInit('post');
+    requestInit.body = JSON.stringify({
+      destination: destination,
+      OTPType: otpTypeEnumValue(type),
+      sectorID: props.sector,
+    });
+    const res = await fetch(`${props.domain}/api/v1/otp/begin`, requestInit);
+    return await res.json();
+  }
+
+  function otpTypeEnumValue(type: 'EMAIL' | 'SMS') {
+    if (type === 'EMAIL') {
+      return 2;
+    } else {
+      return 1;
+    }
   }
 
   return (
