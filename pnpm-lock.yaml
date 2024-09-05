@@ -1,6 +1,7 @@
 lockfileVersion: 5.4
 
 specifiers:
+  '@github/webauthn-json': ^2.0.1
   '@types/node': ^18.7.14
   banana-i18n: ^2.3.3
   base64-js: ^1.5.1
@@ -12,6 +13,7 @@ specifiers:
   vite-plugin-solid: ^2.2.6
 
 dependencies:
+  '@github/webauthn-json': 2.1.1
   '@types/node': 18.7.14
   banana-i18n: 2.3.3
   base64-js: 1.5.1
@@ -349,6 +351,11 @@ packages:
       '@babel/helper-validator-identifier': 7.16.7
       to-fast-properties: 2.0.0
     dev: true
+
+  /@github/webauthn-json/2.1.1:
+    resolution: {integrity: sha512-XrftRn4z75SnaJOmZQbt7Mk+IIjqVHw+glDGOxuHwXkZBZh/MBoRS7MHjSZMDaLhT4RjN2VqiEU7EOYleuJWSQ==}
+    hasBin: true
+    dev: false
 
   /@jridgewell/resolve-uri/3.0.5:
     resolution: {integrity: sha512-VPeQ7+wH0itvQxnG+lIzWgkysKIr3L9sslimFW55rHMdGu/qCQ5z5h9zq4gI8uBtqkpHhsF4Z/OwExufUCThew==}

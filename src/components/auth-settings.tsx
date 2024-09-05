@@ -73,7 +73,7 @@ customElement("spartan-account-settings", defaultProps, (props) => {
   // widget state
   const [errorMessage, setErrorMessage] = createSignal("");
   const [showWebAuthn, setShowWebAuthn] = createSignal(props.showWebAuthn);
-  const [securityKeys, setSecurityKeys] = createSignal([]);
+  const [securityKeys, setSecurityKeys] = createSignal<SecurityKey[]>([]);
   const [showAddKey, setShowAddKey] = createSignal(false);
   const [isAuthed, setIsAuthed] = createSignal(false);
 
@@ -112,9 +112,12 @@ customElement("spartan-account-settings", defaultProps, (props) => {
       console.log(data);
     });
 
-    beginOTPRegistration('gomas.bmw@gmail.com', 'EMAIL').then((data) => {
-      console.log(data);
-    });
+    // get security keys
+    await getSecurityKeys();
+
+    // beginOTPRegistration('gomas.bmw@gmail.com', 'EMAIL').then((data) => {
+    //   console.log(data);
+    // });
   });
 
   async function getProfile() {
@@ -192,7 +195,15 @@ customElement("spartan-account-settings", defaultProps, (props) => {
   }
 
   async function getSecurityKeys() {
-    // TODO: get current user account settings
+    let requestInit = getFetchInit('get');
+    try {
+      const res = await fetch(`${props.domain}/api/v1/webauthn/registration/list`, requestInit);
+      const data: SecurityKeys = await res.json();
+      setSecurityKeys(data.registrations);
+    } catch (e) {
+      console.error(e);
+      setSecurityKeys([]);
+    }
   }
 
   async function beginOTPRegistration(destination: string, type: 'EMAIL' | 'SMS') {
@@ -202,8 +213,14 @@ customElement("spartan-account-settings", defaultProps, (props) => {
       OTPType: otpTypeEnumValue(type),
       sectorID: props.sector,
     });
-    const res = await fetch(`${props.domain}/api/v1/otp/begin`, requestInit);
-    return await res.json();
+    try {
+      const res = await fetch(`${props.domain}/api/v1/otp/begin`, requestInit);
+      return await res.json();
+    } catch (e) {
+      console.error(e);
+      setErrorMessage(banana.i18n('error-otp-registration'));
+      return
+    }
   }
 
   function otpTypeEnumValue(type: 'EMAIL' | 'SMS') {
@@ -221,13 +238,39 @@ customElement("spartan-account-settings", defaultProps, (props) => {
       <h1>{banana.i18n('sa-account-settings')}</h1>
       {errorMessage && <span class={'error-message'}>{errorMessage}</span>}
       {/*TODO: add update password section*/}
-      {/*TODO: add webauthn setup section*/}
       {showWebAuthn() && (
         <div>
           <h2>{banana.i18n('sa-webauthn-security-keys')}</h2>
           {securityKeys().length === 0 && (
             <div>
               <span>{banana.i18n('sa-no-security-keys')}</span>
+            </div>
+          )}
+          {securityKeys().length > 0 && (
+            <div>
+              <table>
+                <thead>
+                <tr>
+                  <th>{banana.i18n('sa-webauthn-key-name')}</th>
+                  <th>{banana.i18n('sa-webauthn-key-actions')}</th>
+                </tr>
+                </thead>
+                <tbody>
+                {securityKeys().map((key) => (
+                  <tr>
+                    <td>{key.keyName}</td>
+                    <td>
+                      <button onClick={() => {
+                        if (confirm(banana.i18n('sa-confirm-delete-key'))) {
+                          // delete key
+                          console.log('delete key');
+                        }
+                      }}>{banana.i18n('sa-remove')}</button>
+                    </td>
+                  </tr>
+                ))}
+                </tbody>
+              </table>
             </div>
           )}
           {!showAddKey() && (
@@ -276,4 +319,13 @@ interface PubKeyCredentialCreationOptions {
   excludeCredentials: PublicKeyCredentialDescriptor[];
   authenticatorSelection: AuthenticatorSelectionCriteria;
   extensions: AuthenticationExtensionsClientInputs;
+}
+
+
+type SecurityKey = {
+  keyName: string;
+}
+
+interface SecurityKeys {
+  registrations: SecurityKey[];
 }
