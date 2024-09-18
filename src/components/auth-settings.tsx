@@ -8,51 +8,177 @@ import {
   parseCreationOptionsFromJSON,
 } from "@github/webauthn-json/browser-ponyfill";
 
-const style = `.login-frame {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: stretch;
-  border: 1px solid #ccc;
-  padding: 40px 40px;
-  max-width: 350px;
-  min-width: 290px;
-  background-color: rgba(255,255,255,0.9);
+const style = `.container {
+    background-color: #ffffff;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+    width: 400px;
+  }
+
+  .header {
+    text-align: center;
+    font-size: 24px;
+    margin-bottom: 20px;
+  }
+  
+  .section {
+    margin-bottom: 20px;
+  }
+  
+  .section h2 {
+    font-size: 18px;
+    margin-bottom: 10px;
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 5px;
+  }
+  
+  .error-message {
+    color: red;
+  }
+  
+  .security-keys, .mfa-manage {
+    display: flex;
+    flex-direction: column;
 }
 
-
-  .login-frame h1 {
-    margin: 0;
-    align-self: start;
+  .key-item, .mfa-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
   }
 
-  .login-frame input, .login-frame button {
-    margin: 20px 0 0 0;
-    padding: 10px;
+  .key-item span {
+    flex-grow: 1;
   }
 
-  .login-frame .checkbox-wrapper {
-    align-self: start;
+  .mfa-item label {
+    margin-right: 10px;
+    width: 50px;
+  }
+
+  .mfa-item input {
+    flex-grow: 1;
+    padding: 5px;
+    margin-right: 10px;
+  }
+  
+  .mfa-item button {
+    justify-self: start;
+    flex-grow: 1;
+  }
+
+  .btn {
+    padding: 5px 10px;
+    border: none;
+    border-radius: 5px;
     cursor: pointer;
   }
 
-  .login-frame button {
+  .btn.add {
+    background-color: #007bff;
+    color: #ffffff;
+  }
+
+  .btn.remove {
+    background-color: #dc3545;
+    color: #ffffff;
+  }
+
+  .btn.validate {
+    background-color: #28a745;
+    color: #ffffff;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  table, th, td {
+    border: 1px solid #e0e0e0;
+  }
+
+  th, td {
+    padding: 10px;
+    text-align: left;
+  }
+
+  th {
+    background-color: #f9f9f9;
+  }
+  
+  .modal {
+    display: flex;
+    position: fixed;
+    z-index: 1;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.4); /* Black background with opacity */
+    align-items: center;
+    justify-content: center;
+}
+
+/* Modal content */
+.modal-content {
     background-color: #ffffff;
-    border: 1px solid #ccc;
-    color: #333;
+    margin: auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 300px;
     border-radius: 10px;
-  }
-  
-  .login-frame button:disabled {
-    background-color: #cccccc;
-  }
-  
-  .login-frame .error-message {
-    color: red;
-    // margin: 10px 0;
-  }`;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    position: relative;
+    text-align: center;
+}
 
+/* Close button */
+.close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    cursor: pointer;
+}
 
+.close:hover,
+.close:focus {
+    color: #000;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+/* Input and button styling */
+.modal-content input {
+    width: calc(100% - 40px);
+    padding: 10px;
+    margin: 10px 0;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    box-sizing: border-box;
+}
+
+.modal-content .btn.verify {
+    background-color: #007bff;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-top: 10px;
+}
+
+.modal-content .btn.verify:hover {
+    background-color: #0056b3;
+}
+`;
 
 const defaultProps = {
   domain: "http://127.0.0.1:11000",
@@ -72,10 +198,20 @@ customElement("spartan-account-settings", defaultProps, (props) => {
 
   // widget state
   const [errorMessage, setErrorMessage] = createSignal("");
+  const [modalErrorMessage, setModalErrorMessage] = createSignal("");
   const [showWebAuthn, setShowWebAuthn] = createSignal(props.showWebAuthn);
-  const [securityKeys, setSecurityKeys] = createSignal<SecurityKey[]>([]);
   const [showAddKey, setShowAddKey] = createSignal(false);
   const [isAuthed, setIsAuthed] = createSignal(false);
+  const [showAddMFA, setShowAddMFA] = createSignal(true);
+  const [showMFAModal, setShowMFAModal] = createSignal(false);
+
+  // data
+  const [securityKeys, setSecurityKeys] = createSignal<SecurityKey[]>([]);
+  const [otpRegistrations, setOTPRegistrations] = createSignal<OTPRegistration[]>([]);
+  const [transactionID, setTransactionID] = createSignal("");
+  const [newOTP, setNewOTP] = createSignal("");
+  const [newMFAEmail, setNewMFAEmail] = createSignal("");
+  const [newMFAPhone, setNewMFAPhone] = createSignal("");
 
   const banana = setupBanana(props.locale);
 
@@ -115,9 +251,13 @@ customElement("spartan-account-settings", defaultProps, (props) => {
     // get security keys
     await getSecurityKeys();
 
-    // beginOTPRegistration('gomas.bmw@gmail.com', 'EMAIL').then((data) => {
+    // callBeginOTPRegistration('gomas.bmw@gmail.com', 'EMAIL').then((data) => {
     //   console.log(data);
     // });
+
+    listOTPRegistrations().then((data) => {
+      setOTPRegistrations(data.registrations);
+    });
   });
 
   async function getProfile() {
@@ -206,7 +346,16 @@ customElement("spartan-account-settings", defaultProps, (props) => {
     }
   }
 
-  async function beginOTPRegistration(destination: string, type: 'EMAIL' | 'SMS') {
+  async function initiateMFAValidation(destination: string, type: 'EMAIL' | 'SMS') {
+    const response = await callBeginOTPRegistration(destination, type);
+    if (response) {
+      setTransactionID(response.transactionID);
+      // show the MFA modal
+      setShowMFAModal(true);
+    }
+  }
+
+  async function callBeginOTPRegistration(destination: string, type: 'EMAIL' | 'SMS') {
     let requestInit = getFetchInit('post');
     requestInit.body = JSON.stringify({
       destination: destination,
@@ -215,10 +364,51 @@ customElement("spartan-account-settings", defaultProps, (props) => {
     });
     try {
       const res = await fetch(`${props.domain}/api/v1/otp/begin`, requestInit);
+      if (res.status !== 200) {
+        setErrorMessage(banana.i18n('error-otp-verification'));
+        return;
+      }
       return await res.json();
     } catch (e) {
       console.error(e);
       setErrorMessage(banana.i18n('error-otp-registration'));
+      return
+    }
+  }
+
+  async function callFinishOTPRegistration(transactionID: string, otp: string) {
+    let requestInit = getFetchInit('post');
+    requestInit.body = JSON.stringify({
+      transactionID: transactionID,
+      password: otp,
+    });
+    try {
+      const res = await fetch(`${props.domain}/api/v1/otp/finish`, requestInit);
+      if (res.status !== 200) {
+        setModalErrorMessage(banana.i18n('error-otp-verification'));
+        return;
+      }
+      setShowMFAModal(false);
+      setNewOTP('');
+      listOTPRegistrations().then((data) => {
+        setOTPRegistrations(data.registrations);
+      });
+      return await res.json();
+    } catch (e) {
+      console.error(e);
+      setModalErrorMessage(banana.i18n('error-otp-registration'));
+      return;
+    }
+  }
+
+  async function listOTPRegistrations() {
+    let requestInit = getFetchInit('get');
+    try {
+      const res = await fetch(`${props.domain}/api/v1/otp/list`, requestInit);
+      return await res.json();
+    } catch (e) {
+      console.error(e);
+      setErrorMessage(banana.i18n('error-otp-list'));
       return
     }
   }
@@ -232,65 +422,118 @@ customElement("spartan-account-settings", defaultProps, (props) => {
   }
 
   return (
-    <div class={'login-frame'}>
+    <div class={'container'}>
       <style>{style}</style>
       <style>{customStyles}</style>
-      <h1>{banana.i18n('sa-account-settings')}</h1>
+      <h1 class={'header'}>{banana.i18n('sa-account-settings')}</h1>
       {errorMessage && <span class={'error-message'}>{errorMessage}</span>}
       {/*TODO: add update password section*/}
       {showWebAuthn() && (
-        <div>
+        <div class={'section'}>
           <h2>{banana.i18n('sa-webauthn-security-keys')}</h2>
           {securityKeys().length === 0 && (
             <div>
               <span>{banana.i18n('sa-no-security-keys')}</span>
             </div>
           )}
-          {securityKeys().length > 0 && (
-            <div>
-              <table>
-                <thead>
-                <tr>
-                  <th>{banana.i18n('sa-webauthn-key-name')}</th>
-                  <th>{banana.i18n('sa-webauthn-key-actions')}</th>
-                </tr>
-                </thead>
-                <tbody>
-                {securityKeys().map((key) => (
-                  <tr>
-                    <td>{key.keyName}</td>
-                    <td>
-                      <button onClick={() => {
-                        if (confirm(banana.i18n('sa-confirm-delete-key'))) {
-                          // delete key
-                          console.log('delete key');
-                        }
-                      }}>{banana.i18n('sa-remove')}</button>
-                    </td>
-                  </tr>
-                ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {!showAddKey() && (
-            <button onClick={() => setShowAddKey(true)}>+ {banana.i18n('sa-add-security-key')}</button>
-          )}
-          {showAddKey() && (
-            <div class={'add-key-form'}>
-              <div>
-                <label>{banana.i18n('sa-webauthn-key-name')}</label>
-                <input type={'text'} placeholder={banana.i18n('sa-webauthn-key-name')} value={newKeyName()} onInput={(e) => setNewKeyName(e.currentTarget.value)}/>
+          <div class={'security-keys'}>
+
+            {securityKeys().map((key) => (
+              <div class={'key-item'}>
+                <span>{key.keyName}</span>
+                <button class={'btn remove'}
+                        onClick={() => {
+                          if (confirm(banana.i18n('sa-confirm-delete-key'))) {
+                            // delete key
+                            console.log('delete key');
+                          }
+                        }}>{banana.i18n('sa-remove')}</button>
               </div>
-              <div>
-                <button onClick={() => setShowAddKey(false)}>{banana.i18n('sa-cancel')}</button>
-                <button class={'primary'} onClick={() => newKeyName() !== '' && beginWebAuthnRegistration()} disabled={newKeyName() === ''}>{banana.i18n('sa-register')}</button>
+            ))}
+            {securityKeys().length <= 0 && (
+              <span>{banana.i18n('sa-no-security-keys')}</span>
+            )}
+            {!showAddKey() && (
+              <button class={'btn add'}
+                      onClick={() => setShowAddKey(true)}>+ {banana.i18n('sa-add-security-key')}</button>
+            )}
+            {showAddKey() && (
+              <div class={'add-key-form'}>
+                <div>
+                  <label>{banana.i18n('sa-webauthn-key-name')}</label>
+                  <input type={'text'} placeholder={banana.i18n('sa-webauthn-key-name')} value={newKeyName()}
+                         onInput={(e) => setNewKeyName(e.currentTarget.value)}/>
+                </div>
+                <div>
+                  <button onClick={() => setShowAddKey(false)}>{banana.i18n('sa-cancel')}</button>
+                  <button class={'primary'} onClick={() => newKeyName() !== '' && beginWebAuthnRegistration()}
+                          disabled={newKeyName() === ''}>{banana.i18n('sa-register')}</button>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
-      {/*<button onClick={() => login()}>{banana.i18n('sa-login')}</button>*/}
+      {otpRegistrations().length > 0 && (
+        <div class={'section'}>
+          <h2>{banana.i18n('sa-mfa')}</h2>
+          <table>
+            <thead>
+            <tr>
+              <th>{banana.i18n('sa-mfa-destination')}</th>
+              <th>{banana.i18n('sa-mfa-validated')}</th>
+              <th>{banana.i18n('sa-mfa-action')}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {otpRegistrations().map((otp) => (
+              <tr class={'mfa-list-item'}>
+                <td>{otp.DisplayName}</td>
+                <td>{otp.Validated ? banana.i18n('sa-yes') : banana.i18n('sa-no')}</td>
+                <td>{
+                  !otp.Validated ? (
+                    <button class={'btn validate'} onClick={() => {initiateMFAValidation(otp.DisplayName, otp.Type === 'email' ? "EMAIL" : "SMS")}}>{banana.i18n('sa-validate')}</button>
+                  ) : (
+                    <button class={'btn remove'}>{banana.i18n('sa-remove')}</button>
+                  )
+                }</td>
+              </tr>
+            ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {showAddMFA() && (
+        <div class={'section'}>
+          <h2>{banana.i18n('sa-add-mfa')}</h2>
+          <div class={'mfa-manage'}>
+            <div class={'mfa-item'}>
+              <label for={'email'}>{banana.i18n('sa-email')}</label>
+              <input id="email" type={'text'} placeholder={banana.i18n('sa-email')} value={newMFAEmail()} onInput={(e) => setNewMFAEmail(e.currentTarget.value)}></input>
+              <button class={'btn add'}
+                      onClick={() => initiateMFAValidation(newMFAEmail(), 'EMAIL')}>{banana.i18n('sa-add-email')}</button>
+            </div>
+            <div class={'mfa-item'}>
+              <label for={'phone'}>{banana.i18n('sa-phone')}</label>
+              <input id="phone" type={'text'} placeholder={banana.i18n('sa-phone')} value={newMFAPhone()} onInput={(e) => setNewMFAPhone(e.currentTarget.value)}></input>
+              <button class={'btn add'}
+                      onClick={() => initiateMFAValidation(newMFAPhone(), 'SMS')}>{banana.i18n('sa-add-sms')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showMFAModal() && (
+        <div class={"modal"} id="mfaModal" onClick={() => setShowMFAModal(false)}>
+          <div class={"modal-content"} onClick={(e) => e.stopPropagation()}>
+            <span class={"close"} id="closeModal" onClick={() => setShowMFAModal(false)}>&times;</span>
+            <h2>MFA Verification</h2>
+            {modalErrorMessage() && <span class={'error-message'}>{modalErrorMessage()}</span>}
+            <p>Please enter the verification code sent to your email or phone:</p>
+            <input type="text" id="mfaCode" placeholder="Enter verification code" value={newOTP()} onInput={(e) => setNewOTP(e.currentTarget.value)}/>
+            <button class={"btn verify"} id="verifyMfa" onClick={() => callFinishOTPRegistration(transactionID(), newOTP())}>Verify</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 });
@@ -328,4 +571,11 @@ type SecurityKey = {
 
 interface SecurityKeys {
   registrations: SecurityKey[];
+}
+
+interface OTPRegistration {
+  Type: "email" | "phone";
+  DisplayName: string;
+  ID: string;
+  Validated: boolean;
 }

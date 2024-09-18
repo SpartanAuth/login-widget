@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MFA Verification Modal</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="modal" id="mfaModal">
+    <div class="modal-content">
+        <span class="close" id="closeModal">&times;</span>
+        <h2>MFA Verification</h2>
+        <p>Please enter the verification code sent to your email or phone:</p>
+        <input type="text" id="mfaCode" placeholder="Enter verification code">
+        <button class="btn verify" id="verifyMfa">Verify</button>
+    </div>
+</div>
+<button class="btn open-modal" onclick="openModal()">Open Modal</button>
+
+<script>
+  // JavaScript to handle opening and closing the modal
+  const modal = document.getElementById('mfaModal');
+  const closeModal = document.getElementById('closeModal');
+
+  // Function to open the modal (for demonstration purposes)
+  function openModal() {
+    modal.style.display = 'block';
+  }
+
+  // Close the modal when the user clicks on <span> (x)
+  closeModal.onclick = function() {
+    modal.style.display = 'none';
+  }
+
+  // Close the modal when the user clicks anywhere outside of the modal
+  window.onclick = function(event) {
+    if (event.target === modal) {
+      modal.style.display = 'none';
+    }
+  }
+</script>
+</body>
+</html>

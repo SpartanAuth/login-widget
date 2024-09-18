@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account Settings</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="container">
+    <h1 class="header">Account Settings</h1>
+
+    <div class="section">
+        <h2>Your Security Keys</h2>
+        <div class="security-keys">
+            <div class="key-item">
+                <span>Test Key</span>
+                <button class="btn remove">Remove</button>
+            </div>
+            <button class="btn add">+ Add Security Key</button>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>MFA Registrations</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Destination</th>
+                <th>Validated</th>
+                <th>Action</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td>gomas.bmw@gmail.com</td>
+                <td>No</td>
+                <td><button class="btn validate">Validate</button></td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>Manage MFA</h2>
+        <div class="mfa-manage">
+            <div class="mfa-item">
+                <label for="email">Email</label>
+                <input type="email" id="email" placeholder="Enter your email">
+                <button class="btn add">Add Email</button>
+            </div>
+            <div class="mfa-item">
+                <label for="phone">Phone</label>
+                <input type="tel" id="phone" placeholder="Enter your phone number">
+                <button class="btn add">Add SMS</button>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
+
