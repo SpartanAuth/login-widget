@@ -82,7 +82,7 @@ const style = `.container {
   }
 
   .btn.remove {
-    background-color: #dc3545;
+    background-color: #999;
     color: #ffffff;
   }
 
@@ -103,6 +103,9 @@ const style = `.container {
   th, td {
     padding: 10px;
     text-align: left;
+    max-width: 100px;
+    text-overflow: ellipsis;
+    overflow: hidden;
   }
 
   th {
@@ -349,6 +352,9 @@ customElement("spartan-account-settings", defaultProps, (props) => {
   async function initiateMFAValidation(destination: string, type: 'EMAIL' | 'SMS') {
     const response = await callBeginOTPRegistration(destination, type);
     if (response) {
+      listOTPRegistrations().then((data) => {
+        setOTPRegistrations(data.registrations);
+      });
       setTransactionID(response.transactionID);
       // show the MFA modal
       setShowMFAModal(true);
@@ -488,15 +494,17 @@ customElement("spartan-account-settings", defaultProps, (props) => {
             <tbody>
             {otpRegistrations().map((otp) => (
               <tr class={'mfa-list-item'}>
-                <td>{otp.DisplayName}</td>
-                <td>{otp.Validated ? banana.i18n('sa-yes') : banana.i18n('sa-no')}</td>
-                <td>{
-                  !otp.Validated ? (
-                    <button class={'btn validate'} onClick={() => {initiateMFAValidation(otp.DisplayName, otp.Type === 'email' ? "EMAIL" : "SMS")}}>{banana.i18n('sa-validate')}</button>
-                  ) : (
-                    <button class={'btn remove'}>{banana.i18n('sa-remove')}</button>
-                  )
+                <td title={otp.DisplayName}>{otp.DisplayName}</td>
+                <td>{otp.Validated ? (
+                  <span>{banana.i18n('sa-yes')}</span>
+                ) : <span>
+                  {banana.i18n('sa-no')}
+                  &nbsp; <button class={'btn validate'} onClick={() => {initiateMFAValidation(otp.DisplayName, otp.Type === 'email' ? "EMAIL" : "SMS")}}>{banana.i18n('sa-validate')}</button>
+                  </span>
                 }</td>
+                <td>
+                  <button class={'btn remove'}>{banana.i18n('sa-remove')}</button>
+                </td>
               </tr>
             ))}
             </tbody>
