@@ -42,7 +42,7 @@ const style = `.container {
     flex-direction: column;
 }
 
-  .key-item, .mfa-item {
+  .key-item, .mfa-item, .add-key-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -53,18 +53,18 @@ const style = `.container {
     flex-grow: 1;
   }
 
-  .mfa-item label {
+  .mfa-item label, .add-key-item label {
     margin-right: 10px;
     width: 50px;
   }
 
-  .mfa-item input {
+  .mfa-item input, .add-key-item input {
     flex-grow: 1;
     padding: 5px;
     margin-right: 10px;
   }
   
-  .mfa-item button {
+  .mfa-item button, .add-key-item button {
     justify-self: start;
     flex-grow: 1;
   }
@@ -205,7 +205,7 @@ customElement("spartan-account-settings", defaultProps, (props) => {
   const [showWebAuthn, setShowWebAuthn] = createSignal(props.showWebAuthn);
   const [showAddKey, setShowAddKey] = createSignal(false);
   const [isAuthed, setIsAuthed] = createSignal(false);
-  const [showAddMFA, setShowAddMFA] = createSignal(true);
+  const [showAddMFA, setShowAddMFA] = createSignal(false);
   const [showMFAModal, setShowMFAModal] = createSignal(false);
 
   // data
@@ -337,6 +337,25 @@ customElement("spartan-account-settings", defaultProps, (props) => {
     });
   }
 
+  async function removeWebAuthnRegistration(keyName: string) {
+    let requestInit = getFetchInit('delete');
+    requestInit.body = JSON.stringify({
+      ID: keyName,
+    });
+    try {
+      const res = await fetch(`${props.domain}/api/v1/webauthn/${keyName}`, requestInit);
+      if (res.status !== 200) {
+        setErrorMessage(banana.i18n('error-webauthn-remove'));
+        return;
+      }
+      getSecurityKeys();
+    } catch (e) {
+      console.error(e);
+      setErrorMessage(banana.i18n('error-webauthn-remove'));
+      return
+    }
+  }
+
   async function getSecurityKeys() {
     let requestInit = getFetchInit('get');
     try {
@@ -396,6 +415,9 @@ customElement("spartan-account-settings", defaultProps, (props) => {
       }
       setShowMFAModal(false);
       setNewOTP('');
+      setShowAddMFA(false);
+      setNewMFAPhone('');
+      setNewMFAEmail('');
       listOTPRegistrations().then((data) => {
         setOTPRegistrations(data.registrations);
       });
@@ -472,7 +494,7 @@ customElement("spartan-account-settings", defaultProps, (props) => {
                         onClick={() => {
                           if (confirm(banana.i18n('sa-confirm-delete-key'))) {
                             // delete key
-                            console.log('delete key');
+                            removeWebAuthnRegistration(key.keyName);
                           }
                         }}>{banana.i18n('sa-remove')}</button>
               </div>
@@ -486,16 +508,19 @@ customElement("spartan-account-settings", defaultProps, (props) => {
             )}
             {showAddKey() && (
               <div class={'add-key-form'}>
-                <div>
-                  <label>{banana.i18n('sa-webauthn-key-name')}</label>
-                  <input type={'text'} placeholder={banana.i18n('sa-webauthn-key-name')} value={newKeyName()}
+                <div class={'add-key-item'}>
+                  <label for={'keyName'} style={'display: none;'}>{banana.i18n('sa-webauthn-key-name')}</label>
+                  <input id={'keyName'} type={'text'} placeholder={banana.i18n('sa-webauthn-key-name')}
+                         value={newKeyName()}
                          onInput={(e) => setNewKeyName(e.currentTarget.value)}/>
-                </div>
-                <div>
-                  <button onClick={() => setShowAddKey(false)}>{banana.i18n('sa-cancel')}</button>
-                  <button class={'primary'} onClick={() => newKeyName() !== '' && beginWebAuthnRegistration()}
+                  <button class={'btn remove'}
+                          onClick={() => setShowAddKey(false)}>{banana.i18n('sa-cancel')}</button>
+                  <button class={'btn add'} onClick={() => newKeyName() !== '' && beginWebAuthnRegistration()}
                           disabled={newKeyName() === ''}>{banana.i18n('sa-register')}</button>
                 </div>
+                {/*<div class={'add-key-item'}>*/}
+
+                {/*</div>*/}
               </div>
             )}
           </div>
@@ -505,7 +530,7 @@ customElement("spartan-account-settings", defaultProps, (props) => {
         <div class={'section'}>
           <h2>{banana.i18n('sa-mfa')}</h2>
           <table>
-            <thead>
+          <thead>
             <tr>
               <th>{banana.i18n('sa-mfa-destination')}</th>
               <th>{banana.i18n('sa-mfa-validated')}</th>
@@ -524,12 +549,23 @@ customElement("spartan-account-settings", defaultProps, (props) => {
                   </span>
                 }</td>
                 <td>
-                  <button class={'btn remove'} onClick={() => removeOTPRegistration(otp.ID)}>{banana.i18n('sa-remove')}</button>
+                  <button class={'btn remove'} onClick={() => {
+                    if (confirm(banana.i18n('sa-confirm-delete-key'))) {
+                      removeOTPRegistration(otp.ID)
+                    }}}>{banana.i18n('sa-remove')}</button>
                 </td>
               </tr>
             ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {!showAddMFA() && (
+        <div class={'section'}>
+          <div class={'mfa-manage'}>
+            <button class={'btn add'}
+                    onClick={() => setShowAddMFA(true)}>+ {banana.i18n('sa-register-mfa')}</button>
+          </div>
         </div>
       )}
       {showAddMFA() && (
@@ -538,15 +574,21 @@ customElement("spartan-account-settings", defaultProps, (props) => {
           <div class={'mfa-manage'}>
             <div class={'mfa-item'}>
               <label for={'email'}>{banana.i18n('sa-email')}</label>
-              <input id="email" type={'text'} placeholder={banana.i18n('sa-email')} value={newMFAEmail()} onInput={(e) => setNewMFAEmail(e.currentTarget.value)}></input>
+              <input id="email" type={'text'} placeholder={banana.i18n('sa-email')} value={newMFAEmail()}
+                     onInput={(e) => setNewMFAEmail(e.currentTarget.value)}></input>
               <button class={'btn add'}
                       onClick={() => initiateMFAValidation(newMFAEmail(), 'EMAIL')}>{banana.i18n('sa-add-email')}</button>
             </div>
             <div class={'mfa-item'}>
               <label for={'phone'}>{banana.i18n('sa-phone')}</label>
-              <input id="phone" type={'text'} placeholder={banana.i18n('sa-phone')} value={newMFAPhone()} onInput={(e) => setNewMFAPhone(e.currentTarget.value)}></input>
+              <input id="phone" type={'text'} placeholder={banana.i18n('sa-phone')} value={newMFAPhone()}
+                     onInput={(e) => setNewMFAPhone(e.currentTarget.value)}></input>
               <button class={'btn add'}
                       onClick={() => initiateMFAValidation(newMFAPhone(), 'SMS')}>{banana.i18n('sa-add-sms')}</button>
+            </div>
+            <div class={'mfa-item'}>
+              <button class={'btn remove'}
+                      onClick={() => setShowAddMFA(false)}>{banana.i18n('sa-cancel')}</button>
             </div>
           </div>
         </div>

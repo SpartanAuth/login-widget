@@ -49,5 +49,7 @@
   "sa-mfa-action": "Action",
   "sa-no": "No",
   "sa-yes": "Yes",
-  "error-otp-remove": "Error removing MFA Registration"
+  "error-otp-remove": "Error removing MFA Registration",
+  "error-webauthn-remove": "Error removing WebAuthn Registration",
+  "sa-register-mfa": "Register MFA"
 }
