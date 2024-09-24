@@ -361,7 +361,7 @@ customElement("spartan-account-settings", defaultProps, (props) => {
     try {
       const res = await fetch(`${props.domain}/api/v1/webauthn/registration/list`, requestInit);
       const data: SecurityKeys = await res.json();
-      setSecurityKeys(data.registrations);
+      setSecurityKeys(data.registrations || []);
     } catch (e) {
       console.error(e);
       setSecurityKeys([]);
@@ -477,16 +477,10 @@ customElement("spartan-account-settings", defaultProps, (props) => {
       <h1 class={'header'}>{banana.i18n('sa-account-settings')}</h1>
       {errorMessage && <span class={'error-message'}>{errorMessage}</span>}
       {/*TODO: add update password section*/}
-      {showWebAuthn() && (
+      {showWebAuthn() && !!securityKeys().length && (
         <div class={'section'}>
           <h2>{banana.i18n('sa-webauthn-security-keys')}</h2>
-          {securityKeys().length === 0 && (
-            <div>
-              <span>{banana.i18n('sa-no-security-keys')}</span>
-            </div>
-          )}
           <div class={'security-keys'}>
-
             {securityKeys().map((key) => (
               <div class={'key-item'}>
                 <span>{key.keyName}</span>
@@ -502,27 +496,31 @@ customElement("spartan-account-settings", defaultProps, (props) => {
             {securityKeys().length <= 0 && (
               <span>{banana.i18n('sa-no-security-keys')}</span>
             )}
-            {!showAddKey() && (
-              <button class={'btn add'}
-                      onClick={() => setShowAddKey(true)}>+ {banana.i18n('sa-add-security-key')}</button>
-            )}
-            {showAddKey() && (
-              <div class={'add-key-form'}>
-                <div class={'add-key-item'}>
-                  <label for={'keyName'} style={'display: none;'}>{banana.i18n('sa-webauthn-key-name')}</label>
-                  <input id={'keyName'} type={'text'} placeholder={banana.i18n('sa-webauthn-key-name')}
-                         value={newKeyName()}
-                         onInput={(e) => setNewKeyName(e.currentTarget.value)}/>
-                  <button class={'btn remove'}
-                          onClick={() => setShowAddKey(false)}>{banana.i18n('sa-cancel')}</button>
-                  <button class={'btn add'} onClick={() => newKeyName() !== '' && beginWebAuthnRegistration()}
-                          disabled={newKeyName() === ''}>{banana.i18n('sa-register')}</button>
-                </div>
-                {/*<div class={'add-key-item'}>*/}
 
-                {/*</div>*/}
+          </div>
+        </div>
+      )}
+      {showWebAuthn() && (
+        <div class={'section'}>
+          <div class={'security-keys'}>
+          {!showAddKey() && (
+            <button class={'btn add'}
+                    onClick={() => setShowAddKey(true)}>+ {banana.i18n('sa-add-security-key')}</button>
+          )}
+          {showAddKey() && (
+            <div class={'add-key-form'}>
+              <div class={'add-key-item'}>
+                <label for={'keyName'} style={'display: none;'}>{banana.i18n('sa-webauthn-key-name')}</label>
+                <input id={'keyName'} type={'text'} placeholder={banana.i18n('sa-webauthn-key-name')}
+                       value={newKeyName()}
+                       onInput={(e) => setNewKeyName(e.currentTarget.value)}/>
+                <button class={'btn remove'}
+                        onClick={() => setShowAddKey(false)}>{banana.i18n('sa-cancel')}</button>
+                <button class={'btn add'} onClick={() => newKeyName() !== '' && beginWebAuthnRegistration()}
+                        disabled={newKeyName() === ''}>{banana.i18n('sa-register')}</button>
               </div>
-            )}
+            </div>
+          )}
           </div>
         </div>
       )}
