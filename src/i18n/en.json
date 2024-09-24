@@ -48,5 +48,6 @@
   "sa-validate": "Validate",
   "sa-mfa-action": "Action",
   "sa-no": "No",
-  "sa-yes": "Yes"
+  "sa-yes": "Yes",
+  "error-otp-remove": "Error removing MFA Registration"
 }

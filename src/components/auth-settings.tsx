@@ -419,6 +419,27 @@ customElement("spartan-account-settings", defaultProps, (props) => {
     }
   }
 
+  async function removeOTPRegistration(id: string) {
+    let requestInit = getFetchInit('delete');
+    requestInit.body = JSON.stringify({
+      ID: id,
+    });
+    try {
+      const res = await fetch(`${props.domain}/api/v1/otp/${id}`, requestInit);
+      if (res.status !== 200) {
+        setErrorMessage(banana.i18n('error-otp-remove'));
+        return;
+      }
+      listOTPRegistrations().then((data) => {
+        setOTPRegistrations(data.registrations);
+      });
+    } catch (e) {
+      console.error(e);
+      setErrorMessage(banana.i18n('error-otp-remove'));
+      return
+    }
+  }
+
   function otpTypeEnumValue(type: 'EMAIL' | 'SMS') {
     if (type === 'EMAIL') {
       return 2;
@@ -503,7 +524,7 @@ customElement("spartan-account-settings", defaultProps, (props) => {
                   </span>
                 }</td>
                 <td>
-                  <button class={'btn remove'}>{banana.i18n('sa-remove')}</button>
+                  <button class={'btn remove'} onClick={() => removeOTPRegistration(otp.ID)}>{banana.i18n('sa-remove')}</button>
                 </td>
               </tr>
             ))}
