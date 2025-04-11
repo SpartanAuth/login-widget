@@ -3,10 +3,7 @@
   "version": "0.1.0",
   "description": "",
   "scripts": {
-    "start": "vite",
-    "dev": "vite",
-    "build": "vite build",
-    "serve": "vite preview"
+    "build": "vite build"
   },
   "main": "dist/sa-widgets.umd.js",
   "module": "dist/sa-widgets.mjs",

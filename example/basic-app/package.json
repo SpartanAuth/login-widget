@@ -4,7 +4,6 @@
   "description": "A basic example of using Spartan Auth Widgets with vanilla HTML.",
   "scripts": {
     "start": "vite",
-    "dev": "vite",
     "build": "vite build",
     "serve": "vite preview"
   },
