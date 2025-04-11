@@ -6,7 +6,7 @@ import {
   get,
   parseRequestOptionsFromJSON,
 } from "@github/webauthn-json/browser-ponyfill";
-import {getDecodedSpartanToken, getSpartanToken} from "./spartanToken";
+import {getDecodedSpartanToken} from "./spartanToken";
 
 const style = `.login-frame {
   display: flex;

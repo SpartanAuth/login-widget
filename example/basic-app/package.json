@@ -1,0 +1,19 @@
+{
+  "name": "example-basic-spartan-auth-widgets",
+  "version": "0.1.0",
+  "description": "A basic example of using Spartan Auth Widgets with vanilla HTML.",
+  "scripts": {
+    "start": "vite",
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "vite preview"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "spartan-auth-widgets": "file:../../library",
+    "vite": "^6.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0"
+  }
+}

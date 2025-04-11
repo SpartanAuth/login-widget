@@ -1,6 +1,6 @@
 {
-  "name": "vite-template-solid",
-  "version": "0.0.0",
+  "name": "spartan-auth-widgets",
+  "version": "0.1.0",
   "description": "",
   "scripts": {
     "start": "vite",
@@ -8,10 +8,15 @@
     "build": "vite build",
     "serve": "vite preview"
   },
-  "license": "MIT",
+  "main": "dist/sa-widgets.umd.js",
+  "module": "dist/sa-widgets.mjs",
+  "files": [
+    "dist"
+  ],
+  "license": "Apache-2.0",
   "devDependencies": {
     "typescript": "^4.6.4",
-    "vite": "^2.9.9",
+    "vite": "6.2.5",
     "vite-plugin-solid": "^2.2.6"
   },
   "dependencies": {

@@ -1,0 +1,1 @@
+import 'spartan-auth-widgets';
