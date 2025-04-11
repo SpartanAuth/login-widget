@@ -10,6 +10,7 @@
   "files": [
     "dist"
   ],
+  "repository": "https://github.com/SpartanAuth/login-widget.git",
   "license": "Apache-2.0",
   "devDependencies": {
     "typescript": "^4.6.4",
