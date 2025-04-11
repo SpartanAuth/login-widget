@@ -60,7 +60,7 @@ const defaultProps = {
   startMode: 'password',
   styles: "",
   locale: "en",
-  redirect: '/',
+  redirect: '',
 };
 
 customElement("spartan-login", defaultProps, (props) => {
@@ -72,6 +72,7 @@ customElement("spartan-login", defaultProps, (props) => {
   const [selfSignUpAllowed, setSelfSignUpAllowed] = createSignal(false);
   const [signUpComplete, setSignUpComplete] = createSignal(false);
   const banana = setupBanana(props.locale);
+  let hostRef!: HTMLFormElement;
   let customStyles;
   try {
     customStyles = props.styles;
@@ -82,7 +83,7 @@ customElement("spartan-login", defaultProps, (props) => {
 
   onMount(async () => {
     let token = getDecodedSpartanToken();
-    if (token && window.location.pathname !== props.redirect) {
+    if (token && props.redirect !== '' && window.location.pathname !== props.redirect) {
       window.location.href = props.redirect;
       return;
     }
@@ -228,7 +229,23 @@ customElement("spartan-login", defaultProps, (props) => {
       console.log(data);
       localStorage.setItem('spartan-token', data.token);
       localStorage.setItem('spartan-txid', data.transactionID);
-      window.location.href = redirect();
+
+      // emit a custom event with the token
+      const event = new CustomEvent('spartan-login', {
+        bubbles: true,
+        cancelable: true,
+        detail: {
+          token: data.token,
+          transactionID: data.transactionID,
+        }
+      });
+
+      // dispatch the event on the custom element
+      const hostEl = (hostRef.getRootNode() as ShadowRoot).host;
+      hostEl.dispatchEvent(event);
+      if (redirect() !== '') {
+        window.location.href = redirect();
+      }
     }).catch((res) => {
       res.json().then((data:any) => {
         console.log(data.message);
@@ -242,11 +259,11 @@ customElement("spartan-login", defaultProps, (props) => {
   }
 
   return (
-    <form class={'login-frame'} onSubmit={(e) => {currMode() === 'sign-up' ? signup(e) : login(e); }}>
+    <form class={'login-frame'} onSubmit={(e) => {currMode() === 'sign-up' ? signup(e) : login(e); }} ref={hostRef}>
       <style>{style}</style>
       <style>{customStyles}</style>
       <h1>{banana.i18n('sa-login')}</h1>
-      {errorMessage && <span class={'error-message'}>{errorMessage}</span>}
+      {errorMessage && <span class={'error-message'}>{errorMessage()}</span>}
       {signUpComplete() && (<span>{banana.i18n('sa-signup-complete')}</span>)}
       <input type="text"
              placeholder={banana.i18n('sa-username')}
