@@ -51,5 +51,17 @@
   "sa-yes": "Yes",
   "error-otp-remove": "Error removing MFA Registration",
   "error-webauthn-remove": "Error removing WebAuthn Registration",
-  "sa-register-mfa": "Register MFA"
+  "sa-register-mfa": "Register MFA",
+
+  "sa-complete-invite": "Complete Your Invitation",
+  "sa-invite-otp": "Verification Code",
+  "sa-invite-otp-hint": "Enter the code from your invite email",
+  "sa-invite-password": "Choose a Password",
+  "sa-invite-password-hint": "Create a secure password for your account",
+  "sa-invite-submit": "Complete Registration",
+  "sa-invite-success": "Registration complete! Redirecting to login...",
+  "sa-invite-error-otp": "Invalid or expired verification code",
+  "sa-invite-error-expired": "This invite has expired. Please contact your administrator.",
+  "sa-invite-error-generic": "Unable to complete registration. Please try again.",
+  "sa-invite-completing": "Completing registration..."
 }

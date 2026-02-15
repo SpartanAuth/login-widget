@@ -17,5 +17,17 @@
   "sa-register": "登録",
   "sa-error.login": "ユーザー名かパスワードが無効",
   "sa-error.register": "ユーザー名かパスワードが無効",
-  "sa-error.unknown": "未知のエラー"
+  "sa-error.unknown": "未知のエラー",
+
+  "sa-complete-invite": "招待を完了する",
+  "sa-invite-otp": "確認コード",
+  "sa-invite-otp-hint": "招待メールのコードを入力してください",
+  "sa-invite-password": "パスワードを選択",
+  "sa-invite-password-hint": "アカウント用の安全なパスワードを作成してください",
+  "sa-invite-submit": "登録を完了",
+  "sa-invite-success": "登録完了！ログインページへリダイレクト中...",
+  "sa-invite-error-otp": "無効または期限切れの確認コード",
+  "sa-invite-error-expired": "この招待は期限切れです。管理者にお問い合わせください。",
+  "sa-invite-error-generic": "登録を完了できませんでした。もう一度お試しください。",
+  "sa-invite-completing": "登録を完了しています..."
 }

@@ -17,5 +17,17 @@
   "sa-register": "S'inscrire",
   "sa-error.login": "Nom d'utilisateur ou mot de passe invalide",
   "sa-error.register": "Nom d'utilisateur ou mot de passe invalide",
-  "sa-error.unknown": "Erreur inconnue"
+  "sa-error.unknown": "Erreur inconnue",
+
+  "sa-complete-invite": "Complétez votre invitation",
+  "sa-invite-otp": "Code de vérification",
+  "sa-invite-otp-hint": "Entrez le code de votre email d'invitation",
+  "sa-invite-password": "Choisissez un mot de passe",
+  "sa-invite-password-hint": "Créez un mot de passe sécurisé pour votre compte",
+  "sa-invite-submit": "Terminer l'inscription",
+  "sa-invite-success": "Inscription terminée ! Redirection vers la connexion...",
+  "sa-invite-error-otp": "Code de vérification invalide ou expiré",
+  "sa-invite-error-expired": "Cette invitation a expiré. Veuillez contacter votre administrateur.",
+  "sa-invite-error-generic": "Impossible de terminer l'inscription. Veuillez réessayer.",
+  "sa-invite-completing": "Finalisation de l'inscription..."
 }

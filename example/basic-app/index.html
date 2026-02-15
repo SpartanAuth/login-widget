@@ -15,36 +15,116 @@
               display: grid;
               place-items: center;
           }
+
+          .nav-link {
+              margin-top: 20px;
+              text-align: center;
+          }
+
+          .nav-link a {
+              color: #333;
+              text-decoration: none;
+              padding: 10px 20px;
+              background-color: rgba(255, 255, 255, 0.9);
+              border-radius: 5px;
+              font-size: 0.9em;
+              transition: background-color 0.2s;
+          }
+
+          .nav-link a:hover {
+              background-color: rgba(255, 255, 255, 1);
+          }
+
+          .view {
+              display: none;
+          }
+
+          .view.active {
+              display: block;
+          }
       </style>
   </head>
   <body>
   <div id="root">
-      <div id="container">
-          <spartan-login start-mode="webauthn" domain="http://10.0.0.12:11000" locale="en" redirect="/app.html" styles=".login-frame button {background-color: #00f000;}"></spartan-login>
+      <!-- Login View -->
+      <div id="login-view" class="view active">
+          <div id="login-container">
+              <spartan-login start-mode="webauthn" domain="http://10.0.0.12:11000" locale="en" redirect="/app.html" styles=".login-frame button {background-color: #00f000;}"></spartan-login>
+          </div>
+          <div class="nav-link">
+              <a onclick="changeLanguage()">Change Language</a>
+          </div>
       </div>
-      <div>
-          <button onclick="changeLanguage()">Change Language</button>
+
+      <!-- Invite View -->
+      <div id="invite-view" class="view">
+          <div id="invite-container">
+              <spartan-invite domain="http://10.0.0.12:11000" locale="en" redirect="/app.html" styles=".invite-frame button {background-color: #00f000;}"></spartan-invite>
+          </div>
+          <div class="nav-link">
+              <a href="#login">← Back to Login</a>
+          </div>
       </div>
   </div>
   <noscript>You need to enable JavaScript to run this app.</noscript>
     <script>
         let lang = 0;
+
+        // Language switcher (only for login view)
         function changeLanguage() {
           let langList = ['en', 'fr','es','ja'];
           lang = lang + 1;
           if (lang >= langList.length) {
             lang = 0;
           }
-          let elem = document.querySelector('spartan-login');
-          let parent = elem.parentNode;
-          parent.removeChild(elem);
-          let newElem = document.createElement('spartan-login');
-          newElem.setAttribute('start-mode', 'webAuthn');
-          newElem.setAttribute('redirect', '/app.html');
-          newElem.setAttribute('locale', langList[lang]);
-          newElem.setAttribute('styles', '.login-frame button {background-color: #00f000;}');
-          parent.appendChild(newElem);
+
+          // Update login widget
+          let loginElem = document.querySelector('spartan-login');
+          if (loginElem) {
+            let parent = loginElem.parentNode;
+            parent.removeChild(loginElem);
+            let newElem = document.createElement('spartan-login');
+            newElem.setAttribute('start-mode', 'webAuthn');
+            newElem.setAttribute('redirect', '/app.html');
+            newElem.setAttribute('locale', langList[lang]);
+            newElem.setAttribute('styles', '.login-frame button {background-color: #00f000;}');
+            parent.appendChild(newElem);
+          }
+
+          // Update invite widget if present
+          let inviteElem = document.querySelector('spartan-invite');
+          if (inviteElem) {
+            inviteElem.setAttribute('locale', langList[lang]);
+          }
         }
+
+        // Simple hash-based routing
+        function handleRoute() {
+          const hash = window.location.hash.slice(1); // Remove the # character
+
+          // Hide all views
+          document.querySelectorAll('.view').forEach(view => {
+            view.classList.remove('active');
+          });
+
+          if (hash.startsWith('invite')) {
+
+            // Show invite view
+            document.getElementById('invite-view').classList.add('active');
+
+            // Update the invite widget with the sub from the URL
+            const inviteWidget = document.querySelector('spartan-invite');
+          } else {
+            // Default to login view
+            document.getElementById('login-view').classList.add('active');
+          }
+        }
+
+        // Listen for hash changes
+        window.addEventListener('hashchange', handleRoute);
+
+        // Handle initial route on page load
+        window.addEventListener('DOMContentLoaded', handleRoute);
     </script>
     <script src="./src/index.tsx" type="module"></script>
   </body>

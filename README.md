@@ -22,6 +22,32 @@ Then include the widget in your application's HTML:
 <spartan-login start-mode="webAuthn" locale="en"></spartan-login>
 ```
 
+### Invite Widget
+
+For completing user invitations, use the invite widget:
+
+```html
+<spartan-invite 
+  domain="https://auth.yourdomain.com" 
+  sector="your-sector-id" 
+  sub="user-sub-from-invite" 
+  email="user@example.com"
+  locale="en"
+  redirect="/app">
+</spartan-invite>
+```
+
+The invite widget can also read `sub` and `email` from URL parameters if not provided as props:
+
+```html
+<!-- URL: /complete-invite?sub=abc123&email=user@example.com -->
+<spartan-invite 
+  domain="https://auth.yourdomain.com" 
+  sector="your-sector-id"
+  redirect="/login">
+</spartan-invite>
+```
+
 ### Configure the widget
 
 TODO: Add the configuration information here.

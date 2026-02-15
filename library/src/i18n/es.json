@@ -17,5 +17,17 @@
   "sa-register": "Registro",
   "sa-error.login": "Usuario o contraseña invalido",
   "sa-error.register": "Usuario o contraseña invalido",
-  "sa-error.unknown": "Error desconocido"
+  "sa-error.unknown": "Error desconocido",
+
+  "sa-complete-invite": "Completa tu invitación",
+  "sa-invite-otp": "Código de verificación",
+  "sa-invite-otp-hint": "Ingresa el código de tu correo de invitación",
+  "sa-invite-password": "Elige una contraseña",
+  "sa-invite-password-hint": "Crea una contraseña segura para tu cuenta",
+  "sa-invite-submit": "Completar registro",
+  "sa-invite-success": "¡Registro completo! Redirigiendo al inicio de sesión...",
+  "sa-invite-error-otp": "Código de verificación inválido o expirado",
+  "sa-invite-error-expired": "Esta invitación ha expirado. Por favor contacta a tu administrador.",
+  "sa-invite-error-generic": "No se pudo completar el registro. Por favor intenta de nuevo.",
+  "sa-invite-completing": "Completando registro..."
 }
