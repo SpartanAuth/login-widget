@@ -19,6 +19,11 @@
   "sa-error.register": "ユーザー名かパスワードが無効",
   "sa-error.unknown": "未知のエラー",
 
+  "sa-otp-required": "ワンタイムコードが必要です。",
+  "sa-otp-choose": "コードの受け取り方法を選択してください：",
+  "sa-otp-no-registrations": "MFA方法が登録されていません。",
+  "sa-unknown-challenge": "不明なチャレンジタイプです。",
+
   "sa-complete-invite": "招待を完了する",
   "sa-invite-otp": "確認コード",
   "sa-invite-otp-hint": "招待メールのコードを入力してください",

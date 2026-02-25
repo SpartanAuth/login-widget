@@ -19,6 +19,11 @@
   "sa-error.register": "Nom d'utilisateur ou mot de passe invalide",
   "sa-error.unknown": "Erreur inconnue",
 
+  "sa-otp-required": "Un code à usage unique est requis.",
+  "sa-otp-choose": "Choisissez comment recevoir votre code :",
+  "sa-otp-no-registrations": "Aucune méthode MFA enregistrée.",
+  "sa-unknown-challenge": "Type de défi inconnu.",
+
   "sa-complete-invite": "Complétez votre invitation",
   "sa-invite-otp": "Code de vérification",
   "sa-invite-otp-hint": "Entrez le code de votre email d'invitation",

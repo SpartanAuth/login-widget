@@ -52,8 +52,6 @@ const style = `.login-frame {
   }
   `;
 
-
-
 const defaultProps = {
   domain: "http://127.0.0.1:11000",
   sector: "0ad5c3e5-0186-4557-8b32-4b36f247bf09", // defaults to the admin sector
@@ -67,10 +65,13 @@ customElement("spartan-login", defaultProps, (props) => {
   const [currMode, setMode] = createSignal(props.startMode);
   const [username, setUsername] = createSignal("");
   const [password, setPassword] = createSignal("");
+  const [otp, setOTP] = createSignal("");
   const [errorMessage, setErrorMessage] = createSignal("");
   const [redirect, setRedirect] = createSignal(props.redirect);
   const [selfSignUpAllowed, setSelfSignUpAllowed] = createSignal(false);
   const [signUpComplete, setSignUpComplete] = createSignal(false);
+  const [otpRegistrations, setOTPRegistrations] = createSignal<Array<{ID?: string; DisplayName?: string; Type?: string}>>([]);
+  const [selectedRegistrationID, setSelectedRegistrationID] = createSignal("");
   const banana = setupBanana(props.locale);
   let hostRef!: HTMLFormElement;
   let customStyles;
@@ -123,6 +124,11 @@ customElement("spartan-login", defaultProps, (props) => {
       passwordLogin();
     } else if (currMode() === 'webauthn') {
       webauthnLogin();
+    } else if (currMode() === 'otp-pick') {
+      // User selected a registration from the picker
+      beginOTP(selectedRegistrationID());
+    } else if (currMode() === 'otp') {
+      otpLogin();
     }
   }
 
@@ -227,8 +233,23 @@ customElement("spartan-login", defaultProps, (props) => {
       }
     }).then(data => {
       console.log(data);
-      localStorage.setItem('spartan-token', data.token);
       localStorage.setItem('spartan-txid', data.transactionID);
+
+      if (!data.token) {
+        // check data.challengeType to determine if otp or webauthn is required
+        if (data.challengeType.indexOf('otp') !== -1) {
+          listOTPRegistrations();
+        } else if (data.challengeType.indexOf('webauthn') !== -1) {
+          setMode('webauthn');
+          setErrorMessage(banana.i18n('sa-webauthn-required'));
+        } else {
+          setErrorMessage(banana.i18n('sa-unknown-challenge'));
+        }
+        return;
+      }
+
+      localStorage.setItem('spartan-token', data.token);
+
 
       // emit a custom event with the token
       const event = new CustomEvent('spartan-login', {
@@ -258,6 +279,88 @@ customElement("spartan-login", defaultProps, (props) => {
     return promise;
   }
 
+  function listOTPRegistrations() {
+    const txid = localStorage.getItem('spartan-txid') || '';
+    fetch(props.domain + `/api/v1/otp/${encodeURIComponent(username())}?transactionID=${encodeURIComponent(txid)}&sectorID=${encodeURIComponent(props.sector)}`, {
+      method: 'get',
+      mode: 'cors',
+      cache: 'no-cache',
+    }).then(response => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        throw new Error(banana.i18n('error-otp-list'));
+      }
+    }).then(data => {
+      const regs: Array<{ID?: string; DisplayName?: string; Type?: string}> = data.registrations || [];
+      if (regs.length === 0) {
+        setErrorMessage(banana.i18n('sa-otp-no-registrations'));
+        return;
+      }
+      if (regs.length === 1) {
+        // Auto-select the only registration
+        beginOTP(regs[0].ID || '');
+      } else {
+        // Present the picker
+        setOTPRegistrations(regs);
+        setSelectedRegistrationID(regs[0].ID || '');
+        setMode('otp-pick');
+        setErrorMessage('');
+      }
+    }).catch((err: Error) => {
+      setErrorMessage(err.message);
+      console.log(err);
+    });
+  }
+
+  function beginOTP(registrationID: string) {
+    console.log("begin OTP, registrationID:", registrationID);
+    fetch(props.domain + "/api/v1/login/otp/begin", {
+      method: 'post',
+      mode: 'cors',
+      cache: 'no-cache',
+      body: JSON.stringify({
+        username: username(),
+        transactionID: localStorage.getItem('spartan-txid'),
+        registrationID: registrationID,
+        sectorID: props.sector,
+      })
+    }).then(response => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        throw new Error(`${response.status} ${response.statusText}`);
+      }
+    }).then(data => {
+      console.log(data);
+      // beginOTP may return a new transactionID
+      if (data.transactionID) {
+        localStorage.setItem('spartan-txid', data.transactionID);
+      }
+      setOTP('');
+      setErrorMessage('');
+      setMode('otp');
+    }).catch((err: Error) => {
+      setErrorMessage(err.message);
+      console.log(err);
+    });
+  }
+
+  function otpLogin() {
+    console.log("OTP login submit");
+    fetch(props.domain + "/api/v1/login/otp", {
+      method: 'post',
+      mode: 'cors',
+      cache: 'no-cache',
+      body: JSON.stringify({
+        username: username(),
+        password: otp(),
+        transactionID: localStorage.getItem('spartan-txid'),
+        sectorID: props.sector,
+      })
+    }).then(handleLoginResponse);
+  }
+
   return (
     <form class={'login-frame'} onSubmit={(e) => {currMode() === 'sign-up' ? signup(e) : login(e); }} ref={hostRef}>
       <style>{style}</style>
@@ -269,6 +372,7 @@ customElement("spartan-login", defaultProps, (props) => {
              placeholder={banana.i18n('sa-username')}
              value={username()}
              onInput={(e) => setUsername(e.currentTarget.value)}
+             disabled={currMode() === "otp" || currMode() === "otp-pick"}
       ></input>
       { currMode() !== "sign-up" && (
         <>
@@ -282,14 +386,35 @@ customElement("spartan-login", defaultProps, (props) => {
           {currMode() === "webauthn" && (
             <span></span>
           )}
-          {currMode() === "totp" && (
-            <input type="text" placeholder={banana.i18n('sa-code')}></input>
+          {currMode() === "otp-pick" && (
+            <>
+              <p>{banana.i18n('sa-otp-choose')}</p>
+              <select
+                value={selectedRegistrationID()}
+                onChange={(e) => setSelectedRegistrationID(e.currentTarget.value)}
+              >
+                {otpRegistrations().map((reg) => (
+                  <option value={reg.ID}>
+                    {reg.DisplayName || reg.ID} ({reg.Type})
+                  </option>
+                ))}
+              </select>
+            </>
           )}
-          <span class={"checkbox-wrapper"}
-                onClick={() => setMode(currMode() === 'password' ? 'webauthn' : 'password')}>
-            <input type="checkbox" checked={currMode() === 'password'}></input>
-            <span>&nbsp;{banana.i18n('sa-use-password')}</span>
-          </span>
+          {currMode() === "otp" && (
+            <input type="text"
+                   value={otp()}
+                   placeholder={banana.i18n('sa-code')}
+                   onInput={(e) => setOTP(e.currentTarget.value)}
+            ></input>
+          )}
+          {(currMode() === "password" || currMode() === "webauthn") && (
+            <span class={"checkbox-wrapper"}
+                  onClick={() => setMode(currMode() === 'password' ? 'webauthn' : 'password')}>
+              <input type="checkbox" checked={currMode() === 'password'}></input>
+              <span>&nbsp;{banana.i18n('sa-use-password')}</span>
+            </span>
+          )}
         </>
       )}
 

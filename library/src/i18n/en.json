@@ -53,7 +53,10 @@
   "error-webauthn-remove": "Error removing WebAuthn Registration",
   "sa-register-mfa": "Register MFA",
 
-  "sa-complete-invite": "Complete Your Invitation",
+  "sa-otp-required": "A one-time code is required.",
+  "sa-otp-choose": "Choose how to receive your code:",
+  "sa-otp-no-registrations": "No MFA methods registered.",
+  "sa-unknown-challenge": "Unknown challenge type.",
   "sa-invite-otp": "Verification Code",
   "sa-invite-otp-hint": "Enter the code from your invite email",
   "sa-invite-password": "Choose a Password",

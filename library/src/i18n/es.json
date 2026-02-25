@@ -19,6 +19,11 @@
   "sa-error.register": "Usuario o contraseña invalido",
   "sa-error.unknown": "Error desconocido",
 
+  "sa-otp-required": "Se requiere un código de un solo uso.",
+  "sa-otp-choose": "Elige cómo recibir tu código:",
+  "sa-otp-no-registrations": "No hay métodos MFA registrados.",
+  "sa-unknown-challenge": "Tipo de desafío desconocido.",
+
   "sa-complete-invite": "Completa tu invitación",
   "sa-invite-otp": "Código de verificación",
   "sa-invite-otp-hint": "Ingresa el código de tu correo de invitación",
