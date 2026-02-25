@@ -26,7 +26,7 @@ const style = `.login-frame {
     align-self: start;
   }
 
-  .login-frame input, .login-frame button {
+  .login-frame input, .login-frame button, .login-frame select {
     margin: 20px 0 0 0;
     padding: 10px;
   }
@@ -41,6 +41,29 @@ const style = `.login-frame {
     border: 1px solid #ccc;
     color: #333;
     border-radius: 10px;
+  }
+
+  .login-frame select {
+    background-color: #ffffff;
+    border: 1px solid #ccc;
+    color: #333;
+    border-radius: 10px;
+    font-size: inherit;
+    font-family: inherit;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23333' d='M6 8L0 0h12z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .login-frame select:focus {
+    outline: none;
+    border-color: #00f0f0;
   }
   
   .login-frame .error-message {
