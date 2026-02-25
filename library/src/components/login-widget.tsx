@@ -449,7 +449,15 @@ customElement("spartan-login", defaultProps, (props) => {
         ></input>
       )}
 
-      <button type="submit">{currMode() === 'sign-up' ? banana.i18n('sa-signup') : banana.i18n('sa-login')}</button>
+      <button type="submit">
+        {currMode() === 'sign-up'
+          ? banana.i18n('sa-signup')
+          : currMode() === 'otp-pick'
+            ? banana.i18n('sa-otp-send-code')
+            : currMode() === 'otp'
+              ? banana.i18n('sa-otp-verify')
+              : banana.i18n('sa-login')}
+      </button>
       {selfSignUpAllowed() && (
         <a class={'centered-text'} href="#" onClick={() => currMode() === 'sign-up' ? setMode(props.startMode) : setMode('sign-up')}>{currMode() === 'sign-up' ? banana.i18n('sa-back') : banana.i18n('sa-signup')}</a>
       )}

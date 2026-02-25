@@ -56,6 +56,8 @@
   "sa-otp-required": "A one-time code is required.",
   "sa-otp-choose": "Choose how to receive your code:",
   "sa-otp-no-registrations": "No MFA methods registered.",
+  "sa-otp-send-code": "Send Code",
+  "sa-otp-verify": "Verify Code",
   "sa-unknown-challenge": "Unknown challenge type.",
   "sa-invite-otp": "Verification Code",
   "sa-invite-otp-hint": "Enter the code from your invite email",

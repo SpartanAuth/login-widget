@@ -22,6 +22,8 @@
   "sa-otp-required": "ワンタイムコードが必要です。",
   "sa-otp-choose": "コードの受け取り方法を選択してください：",
   "sa-otp-no-registrations": "MFA方法が登録されていません。",
+  "sa-otp-send-code": "コードを送信",
+  "sa-otp-verify": "コードを確認",
   "sa-unknown-challenge": "不明なチャレンジタイプです。",
 
   "sa-complete-invite": "招待を完了する",

@@ -22,6 +22,8 @@
   "sa-otp-required": "Un code à usage unique est requis.",
   "sa-otp-choose": "Choisissez comment recevoir votre code :",
   "sa-otp-no-registrations": "Aucune méthode MFA enregistrée.",
+  "sa-otp-send-code": "Envoyer le code",
+  "sa-otp-verify": "Vérifier le code",
   "sa-unknown-challenge": "Type de défi inconnu.",
 
   "sa-complete-invite": "Complétez votre invitation",
