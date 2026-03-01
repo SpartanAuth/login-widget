@@ -219,8 +219,9 @@ customElement("spartan-login", defaultProps, (props) => {
     }).then((data) => {
       // Handle user token input here
       console.log(data);
-      const options = parseRequestOptionsFromJSON(data.CredentialAssertion);
-      return get(options).then((pubKeyCredential) => {
+      const publicKey = parseRequestOptionsFromJSON(data.CredentialAssertion);
+      console.log("Parsed WebAuthn request options:", publicKey);
+      return get(publicKey).then((pubKeyCredential) => {
         const pubKeyBodyStr = JSON.stringify(pubKeyCredential)
         let rawBody = JSON.parse(pubKeyBodyStr);
         rawBody.transactionID = data.TransactionID;

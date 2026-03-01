@@ -307,34 +307,34 @@ customElement("spartan-account-settings", defaultProps, (props) => {
   }
 
   async function finishWebAuthnRegistration(beginResponse: BeginWebAuthnRegistrationResponse) {
-    // @ts-ignore
-    const options = parseCreationOptionsFromJSON(beginResponse.Options);
-    const credResponse = await create(options);
-    // converts the response properly to json
-    const initBodyStr = JSON.stringify(credResponse)
+    try {
+      // @ts-ignore - type mismatch between Go JSON and CredentialCreationOptionsJSON but shapes are compatible
+      const options = parseCreationOptionsFromJSON(beginResponse.Options);
+      console.log("Parsed WebAuthn creation options:", options);
+      const credResponse = await create(options);
+      // converts the response properly to json
+      const initBodyStr = JSON.stringify(credResponse)
 
-    // but we need to augment it with a transactionID
-    let rawBody = JSON.parse(initBodyStr);
-    rawBody.transactionID = beginResponse.TransactionID;
+      // but we need to augment it with a transactionID
+      let rawBody = JSON.parse(initBodyStr);
+      rawBody.transactionID = beginResponse.TransactionID;
 
-    let requestInit = getFetchInit('post');
-    requestInit.body = JSON.stringify(rawBody);
-    // now send it to the server
-    return fetch(`${props.domain}/api/v1/webauthn/registration/finish`, requestInit).then((response) => {
-      if (response.status === 200) {
+      let requestInit = getFetchInit('post');
+      requestInit.body = JSON.stringify(rawBody);
+      // now send it to the server
+      const response = await fetch(`${props.domain}/api/v1/webauthn/registration/finish`, requestInit);
+      if (response.status !== 200) {
+        const data = await response.json();
+        setErrorMessage(data.message);
         return;
-      } else {
-        throw response;
       }
-    }).then(() => {
       setShowAddKey(false);
       setNewKeyName('');
       getSecurityKeys();
-    }).catch((res) => {
-      res.json().then((data:any) => {
-        setErrorMessage(data.message);
-      });
-    });
+    } catch (err: any) {
+      console.error("WebAuthn registration error:", err);
+      setErrorMessage(err?.message || String(err));
+    }
   }
 
   async function removeWebAuthnRegistration(keyName: string) {
