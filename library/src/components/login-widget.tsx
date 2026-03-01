@@ -93,6 +93,9 @@ customElement("spartan-login", defaultProps, (props) => {
   const [redirect, setRedirect] = createSignal(props.redirect);
   const [selfSignUpAllowed, setSelfSignUpAllowed] = createSignal(false);
   const [signUpComplete, setSignUpComplete] = createSignal(false);
+  const [resetComplete, setResetComplete] = createSignal(false);
+  const [resetCode, setResetCode] = createSignal("");
+  const [newPassword, setNewPassword] = createSignal("");
   const [otpRegistrations, setOTPRegistrations] = createSignal<Array<{ID?: string; DisplayName?: string; Type?: string}>>([]);
   const [selectedRegistrationID, setSelectedRegistrationID] = createSignal("");
   const banana = setupBanana(props.locale);
@@ -152,6 +155,10 @@ customElement("spartan-login", defaultProps, (props) => {
       beginOTP(selectedRegistrationID());
     } else if (currMode() === 'otp') {
       otpLogin();
+    } else if (currMode() === 'reset-email') {
+      beginPasswordReset();
+    } else if (currMode() === 'reset-code') {
+      completePasswordReset();
     }
   }
 
@@ -384,18 +391,88 @@ customElement("spartan-login", defaultProps, (props) => {
     }).then(handleLoginResponse);
   }
 
+  function beginPasswordReset() {
+    console.log("begin password reset");
+    setErrorMessage("");
+    setResetComplete(false);
+
+    fetch(`${props.domain}/api/v1/password/reset/begin`, {
+      method: 'POST',
+      mode: 'cors',
+      cache: 'no-cache',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: username(),
+        sectorID: props.sector,
+      })
+    }).then(response => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        throw new Error(banana.i18n('sa-reset-error'));
+      }
+    }).then(data => {
+      console.log(data);
+      setErrorMessage(banana.i18n('sa-reset-email-sent'));
+      setResetCode('');
+      setNewPassword('');
+      setMode('reset-code');
+    }).catch((err: Error) => {
+      setErrorMessage(err.message);
+      console.log(err);
+    });
+  }
+
+  function completePasswordReset() {
+    console.log("complete password reset");
+    setErrorMessage("");
+
+    fetch(`${props.domain}/api/v1/password/reset/complete`, {
+      method: 'POST',
+      mode: 'cors',
+      cache: 'no-cache',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: username(),
+        code: resetCode().toUpperCase().trim(),
+        newPassword: newPassword(),
+        sectorID: props.sector,
+      })
+    }).then(response => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        if (response.status === 400) {
+          throw new Error(banana.i18n('sa-reset-error-code'));
+        }
+        throw new Error(banana.i18n('sa-reset-error'));
+      }
+    }).then(data => {
+      console.log(data);
+      setResetComplete(true);
+      setResetCode('');
+      setNewPassword('');
+      setPassword('');
+      setMode(props.startMode);
+    }).catch((err: Error) => {
+      setErrorMessage(err.message);
+      console.log(err);
+    });
+  }
+
   return (
     <form class={'login-frame'} onSubmit={(e) => {currMode() === 'sign-up' ? signup(e) : login(e); }} ref={hostRef}>
       <style>{style}</style>
       <style>{customStyles}</style>
-      <h1>{banana.i18n('sa-login')}</h1>
+      <h1>{(currMode() === 'reset-email' || currMode() === 'reset-code') ? banana.i18n('sa-reset-password') : banana.i18n('sa-login')}</h1>
       {errorMessage && <span class={'error-message'}>{errorMessage()}</span>}
       {signUpComplete() && (<span>{banana.i18n('sa-signup-complete')}</span>)}
+      {resetComplete() && (<span>{banana.i18n('sa-reset-success')}</span>)}
       <input type="text"
              placeholder={banana.i18n('sa-username')}
              value={username()}
              onInput={(e) => setUsername(e.currentTarget.value)}
-             disabled={currMode() === "otp" || currMode() === "otp-pick"}
+             disabled={currMode() === "otp" || currMode() === "otp-pick" || currMode() === "reset-code"}
       ></input>
       { currMode() !== "sign-up" && (
         <>
@@ -431,6 +508,22 @@ customElement("spartan-login", defaultProps, (props) => {
                    onInput={(e) => setOTP(e.currentTarget.value)}
             ></input>
           )}
+          {currMode() === "reset-code" && (
+            <>
+              <input type="text"
+                     value={resetCode()}
+                     placeholder={banana.i18n('sa-reset-code')}
+                     onInput={(e) => setResetCode(e.currentTarget.value)}
+                     autocomplete="one-time-code"
+              ></input>
+              <input type="password"
+                     value={newPassword()}
+                     placeholder={banana.i18n('sa-new-password')}
+                     onInput={(e) => setNewPassword(e.currentTarget.value)}
+                     autocomplete="new-password"
+              ></input>
+            </>
+          )}
           {(currMode() === "password" || currMode() === "webauthn") && (
             <span class={"checkbox-wrapper"}
                   onClick={() => setMode(currMode() === 'password' ? 'webauthn' : 'password')}>
@@ -456,9 +549,19 @@ customElement("spartan-login", defaultProps, (props) => {
             ? banana.i18n('sa-otp-send-code')
             : currMode() === 'otp'
               ? banana.i18n('sa-otp-verify')
-              : banana.i18n('sa-login')}
+              : currMode() === 'reset-email'
+                ? banana.i18n('sa-otp-send-code')
+                : currMode() === 'reset-code'
+                  ? banana.i18n('sa-reset-submit')
+                  : banana.i18n('sa-login')}
       </button>
-      {selfSignUpAllowed() && (
+      {currMode() === "password" && (
+        <a class={'centered-text'} href="#" onClick={() => { setErrorMessage(''); setResetComplete(false); setMode('reset-email'); }}>{banana.i18n('sa-forgot-password')}</a>
+      )}
+      {(currMode() === "reset-email" || currMode() === "reset-code") && (
+        <a class={'centered-text'} href="#" onClick={() => { setErrorMessage(''); setResetCode(''); setNewPassword(''); setMode(props.startMode); }}>{banana.i18n('sa-back')}</a>
+      )}
+      {selfSignUpAllowed() && currMode() !== "reset-email" && currMode() !== "reset-code" && (
         <a class={'centered-text'} href="#" onClick={() => currMode() === 'sign-up' ? setMode(props.startMode) : setMode('sign-up')}>{currMode() === 'sign-up' ? banana.i18n('sa-back') : banana.i18n('sa-signup')}</a>
       )}
     </form>

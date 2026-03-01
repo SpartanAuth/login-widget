@@ -68,5 +68,15 @@
   "sa-invite-error-otp": "Invalid or expired verification code",
   "sa-invite-error-expired": "This invite has expired. Please contact your administrator.",
   "sa-invite-error-generic": "Unable to complete registration. Please try again.",
-  "sa-invite-completing": "Completing registration..."
+  "sa-invite-completing": "Completing registration...",
+
+  "sa-forgot-password": "Forgot your password?",
+  "sa-reset-password": "Reset Password",
+  "sa-reset-email-sent": "If an account exists with that email, a reset code has been sent.",
+  "sa-new-password": "New Password",
+  "sa-reset-code": "Reset Code",
+  "sa-reset-submit": "Reset Password",
+  "sa-reset-success": "Password reset successfully! You can now log in.",
+  "sa-reset-error": "Unable to reset password. Please try again.",
+  "sa-reset-error-code": "Invalid or expired reset code"
 }

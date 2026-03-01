@@ -34,5 +34,15 @@
   "sa-invite-error-otp": "Código de verificación inválido o expirado",
   "sa-invite-error-expired": "Esta invitación ha expirado. Por favor contacta a tu administrador.",
   "sa-invite-error-generic": "No se pudo completar el registro. Por favor intenta de nuevo.",
-  "sa-invite-completing": "Completando registro..."
+  "sa-invite-completing": "Completando registro...",
+
+  "sa-forgot-password": "¿Olvidaste tu contraseña?",
+  "sa-reset-password": "Restablecer contraseña",
+  "sa-reset-email-sent": "Si existe una cuenta con ese correo, se ha enviado un código de restablecimiento.",
+  "sa-new-password": "Nueva contraseña",
+  "sa-reset-code": "Código de restablecimiento",
+  "sa-reset-submit": "Restablecer contraseña",
+  "sa-reset-success": "¡Contraseña restablecida con éxito! Ya puedes iniciar sesión.",
+  "sa-reset-error": "No se pudo restablecer la contraseña. Por favor intenta de nuevo.",
+  "sa-reset-error-code": "Código de restablecimiento inválido o expirado"
 }

@@ -36,5 +36,15 @@
   "sa-invite-error-otp": "Code de vérification invalide ou expiré",
   "sa-invite-error-expired": "Cette invitation a expiré. Veuillez contacter votre administrateur.",
   "sa-invite-error-generic": "Impossible de terminer l'inscription. Veuillez réessayer.",
-  "sa-invite-completing": "Finalisation de l'inscription..."
+  "sa-invite-completing": "Finalisation de l'inscription...",
+
+  "sa-forgot-password": "Mot de passe oublié ?",
+  "sa-reset-password": "Réinitialiser le mot de passe",
+  "sa-reset-email-sent": "Si un compte existe avec cet e-mail, un code de réinitialisation a été envoyé.",
+  "sa-new-password": "Nouveau mot de passe",
+  "sa-reset-code": "Code de réinitialisation",
+  "sa-reset-submit": "Réinitialiser le mot de passe",
+  "sa-reset-success": "Mot de passe réinitialisé avec succès ! Vous pouvez maintenant vous connecter.",
+  "sa-reset-error": "Impossible de réinitialiser le mot de passe. Veuillez réessayer.",
+  "sa-reset-error-code": "Code de réinitialisation invalide ou expiré"
 }

@@ -36,5 +36,15 @@
   "sa-invite-error-otp": "無効または期限切れの確認コード",
   "sa-invite-error-expired": "この招待は期限切れです。管理者にお問い合わせください。",
   "sa-invite-error-generic": "登録を完了できませんでした。もう一度お試しください。",
-  "sa-invite-completing": "登録を完了しています..."
+  "sa-invite-completing": "登録を完了しています...",
+
+  "sa-forgot-password": "パスワードをお忘れですか？",
+  "sa-reset-password": "パスワードをリセット",
+  "sa-reset-email-sent": "そのメールアドレスのアカウントが存在する場合、リセットコードが送信されました。",
+  "sa-new-password": "新しいパスワード",
+  "sa-reset-code": "リセットコード",
+  "sa-reset-submit": "パスワードをリセット",
+  "sa-reset-success": "パスワードが正常にリセットされました！ログインできます。",
+  "sa-reset-error": "パスワードをリセットできませんでした。もう一度お試しください。",
+  "sa-reset-error-code": "無効または期限切れのリセットコード"
 }
