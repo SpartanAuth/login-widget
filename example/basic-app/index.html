@@ -49,7 +49,7 @@
       <!-- Login View -->
       <div id="login-view" class="view active">
           <div id="login-container">
-              <spartan-login start-mode="webauthn" domain="http://10.0.0.12:11000" locale="en" redirect="/app.html" styles=".login-frame button {background-color: #00f000;}"></spartan-login>
+              <spartan-login start-mode="webauthn" domain="http://localhost:11000" locale="en" redirect="/app.html" styles=".login-frame button {background-color: #00f000;} button.social-btn {background-color: #FFF;}"></spartan-login>
           </div>
           <div class="nav-link">
               <a onclick="changeLanguage()">Change Language</a>
@@ -59,7 +59,7 @@
       <!-- Invite View -->
       <div id="invite-view" class="view">
           <div id="invite-container">
-              <spartan-invite domain="http://10.0.0.12:11000" locale="en" redirect="/app.html" styles=".invite-frame button {background-color: #00f000;}"></spartan-invite>
+              <spartan-invite domain="http://localhost:11000" locale="en" redirect="/app.html" styles=".invite-frame button {background-color: #00f000;}"></spartan-invite>
           </div>
           <div class="nav-link">
               <a href="#login">← Back to Login</a>
@@ -84,10 +84,11 @@
             let parent = loginElem.parentNode;
             parent.removeChild(loginElem);
             let newElem = document.createElement('spartan-login');
-            newElem.setAttribute('start-mode', 'webAuthn');
+            newElem.setAttribute('start-mode', 'webauthn');
+            newElem.setAttribute('domain', 'http://localhost:11000')
             newElem.setAttribute('redirect', '/app.html');
             newElem.setAttribute('locale', langList[lang]);
-            newElem.setAttribute('styles', '.login-frame button {background-color: #00f000;}');
+            newElem.setAttribute('styles', '.login-frame button {background-color: #00f000;} button.social-btn {background-color: #FFF;}');
             parent.appendChild(newElem);
           }
 
