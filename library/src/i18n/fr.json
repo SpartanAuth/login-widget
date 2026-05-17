@@ -46,5 +46,12 @@
   "sa-reset-submit": "Réinitialiser le mot de passe",
   "sa-reset-success": "Mot de passe réinitialisé avec succès ! Vous pouvez maintenant vous connecter.",
   "sa-reset-error": "Impossible de réinitialiser le mot de passe. Veuillez réessayer.",
-  "sa-reset-error-code": "Code de réinitialisation invalide ou expiré"
+  "sa-reset-error-code": "Code de réinitialisation invalide ou expiré",
+
+  "sa-or": "Ou",
+  "sa-social-google": "Continuer avec Google",
+  "sa-social-github": "Continuer avec GitHub",
+  "sa-social-apple": "Continuer avec Apple",
+  "sa-social-oidc": "Continuer avec SSO",
+  "sa-social-error": "Erreur lors de la connexion sociale"
 }

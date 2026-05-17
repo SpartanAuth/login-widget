@@ -46,5 +46,12 @@
   "sa-reset-submit": "パスワードをリセット",
   "sa-reset-success": "パスワードが正常にリセットされました！ログインできます。",
   "sa-reset-error": "パスワードをリセットできませんでした。もう一度お試しください。",
-  "sa-reset-error-code": "無効または期限切れのリセットコード"
+  "sa-reset-error-code": "無効または期限切れのリセットコード",
+
+  "sa-or": "または",
+  "sa-social-google": "Googleで続ける",
+  "sa-social-github": "GitHubで続ける",
+  "sa-social-apple": "Appleで続ける",
+  "sa-social-oidc": "SSOで続ける",
+  "sa-social-error": "ソーシャルログイン開始エラー"
 }

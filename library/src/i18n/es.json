@@ -44,5 +44,12 @@
   "sa-reset-submit": "Restablecer contraseña",
   "sa-reset-success": "¡Contraseña restablecida con éxito! Ya puedes iniciar sesión.",
   "sa-reset-error": "No se pudo restablecer la contraseña. Por favor intenta de nuevo.",
-  "sa-reset-error-code": "Código de restablecimiento inválido o expirado"
+  "sa-reset-error-code": "Código de restablecimiento inválido o expirado",
+
+  "sa-or": "O",
+  "sa-social-google": "Continuar con Google",
+  "sa-social-github": "Continuar con GitHub",
+  "sa-social-apple": "Continuar con Apple",
+  "sa-social-oidc": "Continuar con SSO",
+  "sa-social-error": "Error al iniciar sesión social"
 }

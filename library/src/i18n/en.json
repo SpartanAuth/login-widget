@@ -78,5 +78,12 @@
   "sa-reset-submit": "Reset Password",
   "sa-reset-success": "Password reset successfully! You can now log in.",
   "sa-reset-error": "Unable to reset password. Please try again.",
-  "sa-reset-error-code": "Invalid or expired reset code"
+  "sa-reset-error-code": "Invalid or expired reset code",
+
+  "sa-or": "Or",
+  "sa-social-google": "Continue with Google",
+  "sa-social-github": "Continue with GitHub",
+  "sa-social-apple": "Continue with Apple",
+  "sa-social-oidc": "Continue with SSO",
+  "sa-social-error": "Error starting social login"
 }

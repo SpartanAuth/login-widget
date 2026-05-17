@@ -73,6 +73,47 @@ const style = `.login-frame {
   .centered-text {
     text-align: center;
   }
+
+  .social-divider {
+    display: flex;
+    align-items: center;
+    margin: 20px 0 4px 0;
+    color: #888;
+    font-size: 0.85em;
+  }
+  .social-divider::before, .social-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid #ccc;
+  }
+  .social-divider span {
+    margin: 0 10px;
+  }
+
+  .social-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin: 8px 0 0 0;
+    padding: 10px;
+    width: 100%;
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    background: #fff;
+    cursor: pointer;
+    font-size: inherit;
+    font-family: inherit;
+    box-sizing: border-box;
+    color: #333;
+  }
+  .social-btn:hover:not(:disabled) {
+    background-color: #f5f5f5;
+  }
+  .social-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
   `;
 
 const defaultProps = {
@@ -98,6 +139,8 @@ customElement("spartan-login", defaultProps, (props) => {
   const [newPassword, setNewPassword] = createSignal("");
   const [otpRegistrations, setOTPRegistrations] = createSignal<Array<{ID?: string; DisplayName?: string; Type?: string}>>([]);
   const [selectedRegistrationID, setSelectedRegistrationID] = createSignal("");
+  const [socialProviders, setSocialProviders] = createSignal<Array<{provider: string, enabled: boolean, clientID: string}>>([]);
+  const [socialLoading, setSocialLoading] = createSignal("");
   const banana = setupBanana(props.locale);
   let hostRef!: HTMLFormElement;
   let customStyles;
@@ -109,12 +152,56 @@ customElement("spartan-login", defaultProps, (props) => {
   console.log(customStyles);
 
   onMount(async () => {
+    const params = new URLSearchParams(window.location.search);
+
+    // Handle OAuth error redirect: ?error=...&error_description=...
+    const oauthError = params.get('error');
+    if (oauthError) {
+      history.replaceState({}, '', window.location.pathname);
+      const description = params.get('error_description');
+      setErrorMessage(description || banana.i18n('sa-social-error'));
+      getSectorSettings();
+      getSocialProviders();
+      return;
+    }
+
+    // Handle OAuth success redirect: exchange short-lived code for JWT.
+    const oauthCode = params.get('code');
+    if (oauthCode) {
+      history.replaceState({}, '', window.location.pathname);
+      try {
+        const resp = await fetch(`${props.domain}/api/v1/oauth/exchange`, {
+          method: 'POST',
+          mode: 'cors',
+          cache: 'no-cache',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: oauthCode }),
+        });
+        if (!resp.ok) throw new Error(banana.i18n('sa-social-error'));
+        const data = await resp.json();
+        localStorage.setItem('spartan-token', data.token);
+        const hostEl = (hostRef.getRootNode() as ShadowRoot).host;
+        hostEl.dispatchEvent(new CustomEvent('spartan-login', {
+          bubbles: true,
+          cancelable: true,
+          detail: { token: data.token },
+        }));
+        if (props.redirect !== '') {
+          window.location.href = props.redirect;
+        }
+      } catch (err: any) {
+        setErrorMessage(err.message || banana.i18n('sa-social-error'));
+      }
+      return;
+    }
+
     let token = getDecodedSpartanToken();
     if (token && props.redirect !== '' && window.location.pathname !== props.redirect) {
       window.location.href = props.redirect;
       return;
     }
     getSectorSettings();
+    getSocialProviders();
   })
 
   function getSectorSettings() {
@@ -138,6 +225,46 @@ customElement("spartan-login", defaultProps, (props) => {
       setSelfSignUpAllowed(data.SelfSignUpAllowed);
     }).catch((err: Error) => {
       console.log(err);
+      setErrorMessage(err.message);
+    });
+  }
+
+  function getSocialProviders() {
+    fetch(`${props.domain}/api/v1/sectors/${props.sector}/oauth/providers`, {
+      method: 'GET',
+      mode: 'cors',
+      cache: 'no-cache',
+    }).then(response => {
+      if (response.ok) return response.json();
+      throw new Error('Failed to load social providers');
+    }).then(data => {
+      const enabled = (data.providers || []).filter(
+        (p: {provider: string, enabled: boolean, clientID: string}) => p.enabled
+      );
+      setSocialProviders(enabled);
+    }).catch(() => {
+      // silently ignore — social buttons simply won't appear
+    });
+  }
+
+  function initiateOAuth(provider: string) {
+    if (socialLoading()) return;
+    setSocialLoading(provider);
+    setErrorMessage("");
+    const redirectURI = window.location.origin + window.location.pathname;
+    fetch(`${props.domain}/api/v1/oauth/${provider}/initiate`, {
+      method: 'POST',
+      mode: 'cors',
+      cache: 'no-cache',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sectorID: props.sector, redirectURI }),
+    }).then(response => {
+      if (response.ok) return response.json();
+      throw new Error(banana.i18n('sa-social-error'));
+    }).then(data => {
+      window.location.href = data.authURL;
+    }).catch((err: Error) => {
+      setSocialLoading("");
       setErrorMessage(err.message);
     });
   }
@@ -564,6 +691,50 @@ customElement("spartan-login", defaultProps, (props) => {
       )}
       {selfSignUpAllowed() && currMode() !== "reset-email" && currMode() !== "reset-code" && (
         <a class={'centered-text'} href="#" onClick={() => currMode() === 'sign-up' ? setMode(props.startMode) : setMode('sign-up')}>{currMode() === 'sign-up' ? banana.i18n('sa-back') : banana.i18n('sa-signup')}</a>
+      )}
+
+      {socialProviders().length > 0
+        && (currMode() === 'password' || currMode() === 'webauthn' || currMode() === 'sign-up')
+        && (
+        <>
+          <div class="social-divider"><span>{banana.i18n('sa-or')}</span></div>
+          {socialProviders().map(p => (
+            <button
+              type="button"
+              class="social-btn"
+              disabled={!!socialLoading()}
+              onClick={() => initiateOAuth(p.provider)}
+            >
+              {p.provider === 'google' && (
+                <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+                  <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" fill="#34A853"/>
+                  <path d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957C.347 6.175 0 7.548 0 9s.348 2.825.957 4.039l3.007-2.332z" fill="#FBBC05"/>
+                  <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z" fill="#EA4335"/>
+                </svg>
+              )}
+              {p.provider === 'github' && (
+                <svg width="18" height="18" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                  <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" fill="currentColor"/>
+                </svg>
+              )}
+              {p.provider === 'apple' && (
+                <svg width="18" height="18" viewBox="0 0 814 1000" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-57.8-155.5-127.4C46 790.7 0 663 0 541.8c0-207.8 134.4-317.3 266.5-317.3 100.3 0 183.4 67.7 244.6 67.7 57.3 0 147.4-71.6 260.1-71.6zm-174.5-92.5c-50.9 67-123.1 110.6-195.7 110.6-8.3 0-16.6-.8-24.8-2.5 1.7-63.2 43.3-131.2 94.1-179.3 52.7-49.9 132.7-85.3 207.3-87.5 1.6 8.8 2.4 17.7 2.4 26.7 0 61.6-28.4 127-83.3 131.9z" fill="currentColor"/>
+                </svg>
+              )}
+              {p.provider === 'oidc' && (
+                <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 4a3 3 0 110 6 3 3 0 010-6zm0 14c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08s5.97 1.09 6 3.08c-1.29 1.94-3.5 3.22-6 3.22z" fill="currentColor"/>
+                </svg>
+              )}
+              {p.provider === 'google' ? banana.i18n('sa-social-google')
+                : p.provider === 'github' ? banana.i18n('sa-social-github')
+                : p.provider === 'apple' ? banana.i18n('sa-social-apple')
+                : banana.i18n('sa-social-oidc')}
+            </button>
+          ))}
+        </>
       )}
     </form>
   );
