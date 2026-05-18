@@ -7,7 +7,7 @@
     "locale": "es"
   },
   "sa-login": "Acceso",
-  "sa-username": "Nombre de usuario",
+  "sa-username": "Correo electrónico",
   "sa-password": "Clave",
   "sa-use-password": "Usar contraseña",
   "sa-code": "Código",
@@ -15,8 +15,8 @@
   "sa-remember": "Acuérdate de mí",
   "sa-forgot": "¿Olvidaste tu contraseña?",
   "sa-register": "Registro",
-  "sa-error.login": "Usuario o contraseña invalido",
-  "sa-error.register": "Usuario o contraseña invalido",
+  "sa-error.login": "Correo electrónico o contraseña inválidos",
+  "sa-error.register": "Correo electrónico o contraseña inválidos",
   "sa-error.unknown": "Error desconocido",
 
   "sa-otp-required": "Se requiere un código de un solo uso.",
@@ -51,5 +51,13 @@
   "sa-social-github": "Continuar con GitHub",
   "sa-social-apple": "Continuar con Apple",
   "sa-social-oidc": "Continuar con SSO",
-  "sa-social-error": "Error al iniciar sesión social"
+  "sa-social-error": "Error al iniciar sesión social",
+
+  "sa-signup-mfa-title": "Verifica tu correo electrónico",
+  "sa-signup-verify-prompt": "Se ha enviado un código de verificación a tu correo. Ingrésalo para activar la autenticación multifactor.",
+  "sa-signup-verify-error": "Código de verificación inválido o expirado.",
+  "sa-signup-webauthn-prompt": "¡Tu cuenta está protegida! Opcionalmente, agrega una clave de acceso para inicios de sesión más rápidos.",
+  "sa-signup-webauthn-setup": "Configurar clave de acceso",
+  "sa-signup-webauthn-done": "Omitir por ahora",
+  "sa-signup-webauthn-error": "Error al configurar la clave de acceso. Intenta de nuevo desde la configuración de tu cuenta."
 }

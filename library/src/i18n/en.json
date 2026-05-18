@@ -7,7 +7,7 @@
     "locale": "en"
   },
   "sa-login": "Login",
-  "sa-username": "Username",
+  "sa-username": "Email",
   "sa-password": "Password",
   "sa-use-password": "Use Password",
   "sa-code": "Code",
@@ -19,8 +19,8 @@
   "sa-remember": "Remember me",
   "sa-forgot": "Forgot your password?",
   "sa-register": "Register",
-  "sa-error.login": "Invalid username or password",
-  "sa-error.register": "Invalid username or password",
+  "sa-error.login": "Invalid email or password",
+  "sa-error.register": "Invalid email or password",
   "sa-error.unknown": "Unknown error",
 
   "sa-account-settings" : "Account Settings",
@@ -85,5 +85,13 @@
   "sa-social-github": "Continue with GitHub",
   "sa-social-apple": "Continue with Apple",
   "sa-social-oidc": "Continue with SSO",
-  "sa-social-error": "Error starting social login"
+  "sa-social-error": "Error starting social login",
+
+  "sa-signup-mfa-title": "Verify Your Email",
+  "sa-signup-verify-prompt": "A verification code has been sent to your email. Enter it below to activate multi-factor authentication.",
+  "sa-signup-verify-error": "Invalid or expired verification code.",
+  "sa-signup-webauthn-prompt": "Your account is secure! Optionally, add a passkey for faster and easier logins.",
+  "sa-signup-webauthn-setup": "Set Up Passkey",
+  "sa-signup-webauthn-done": "Skip for now",
+  "sa-signup-webauthn-error": "Error setting up passkey. Please try again from your account settings."
 }

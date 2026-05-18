@@ -7,7 +7,7 @@
     "locale": "ja"
   },
   "sa-login": "ログイン",
-  "sa-username": "ユーザー名",
+  "sa-username": "メールアドレス",
   "sa-password": "パスワード",
   "sa-use-password": "パスワードを使用する",
   "sa-code": "コード",
@@ -15,8 +15,8 @@
   "sa-remember": "私を覚えてますか",
   "sa-forgot": "パスワードをお忘れですか？",
   "sa-register": "登録",
-  "sa-error.login": "ユーザー名かパスワードが無効",
-  "sa-error.register": "ユーザー名かパスワードが無効",
+  "sa-error.login": "メールアドレスかパスワードが無効",
+  "sa-error.register": "メールアドレスかパスワードが無効",
   "sa-error.unknown": "未知のエラー",
 
   "sa-otp-required": "ワンタイムコードが必要です。",
@@ -53,5 +53,13 @@
   "sa-social-github": "GitHubで続ける",
   "sa-social-apple": "Appleで続ける",
   "sa-social-oidc": "SSOで続ける",
-  "sa-social-error": "ソーシャルログイン開始エラー"
+  "sa-social-error": "ソーシャルログイン開始エラー",
+
+  "sa-signup-mfa-title": "メールを確認してください",
+  "sa-signup-verify-prompt": "確認コードがメールに送信されました。多要素認証を有効にするために入力してください。",
+  "sa-signup-verify-error": "無効または期限切れの確認コードです。",
+  "sa-signup-webauthn-prompt": "アカウントが保護されました！パスキーを追加してより速く簡単にログインできます（任意）。",
+  "sa-signup-webauthn-setup": "パスキーを設定",
+  "sa-signup-webauthn-done": "今はスキップ",
+  "sa-signup-webauthn-error": "パスキーの設定中にエラーが発生しました。アカウント設定から再試行してください。"
 }

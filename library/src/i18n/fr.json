@@ -7,7 +7,7 @@
     "locale": "fr"
   },
   "sa-login": "Connexion",
-  "sa-username": "Nom d'utilisateur",
+  "sa-username": "Adresse e-mail",
   "sa-password": "Mot de passe",
   "sa-use-password": "Utiliser le mot de passe",
   "sa-code": "code à deux facteurs",
@@ -15,8 +15,8 @@
   "sa-remember": "Souviens-toi de moi",
   "sa-forgot": "Mot de passe oublié?",
   "sa-register": "S'inscrire",
-  "sa-error.login": "Nom d'utilisateur ou mot de passe invalide",
-  "sa-error.register": "Nom d'utilisateur ou mot de passe invalide",
+  "sa-error.login": "E-mail ou mot de passe invalide",
+  "sa-error.register": "E-mail ou mot de passe invalide",
   "sa-error.unknown": "Erreur inconnue",
 
   "sa-otp-required": "Un code à usage unique est requis.",
@@ -53,5 +53,13 @@
   "sa-social-github": "Continuer avec GitHub",
   "sa-social-apple": "Continuer avec Apple",
   "sa-social-oidc": "Continuer avec SSO",
-  "sa-social-error": "Erreur lors de la connexion sociale"
+  "sa-social-error": "Erreur lors de la connexion sociale",
+
+  "sa-signup-mfa-title": "Vérifiez votre e-mail",
+  "sa-signup-verify-prompt": "Un code de vérification a été envoyé à votre e-mail. Entrez-le ci-dessous pour activer l'authentification multi-facteurs.",
+  "sa-signup-verify-error": "Code de vérification invalide ou expiré.",
+  "sa-signup-webauthn-prompt": "Votre compte est sécurisé ! Ajoutez optionnellement une clé d'accès pour des connexions plus rapides.",
+  "sa-signup-webauthn-setup": "Configurer la clé d'accès",
+  "sa-signup-webauthn-done": "Ignorer pour l'instant",
+  "sa-signup-webauthn-error": "Erreur lors de la configuration de la clé d'accès. Veuillez réessayer depuis les paramètres de votre compte."
 }

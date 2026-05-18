@@ -4,9 +4,11 @@ import { setupBanana } from './banana';
 
 import {
   get,
+  create,
   parseRequestOptionsFromJSON,
+  parseCreationOptionsFromJSON,
 } from "@github/webauthn-json/browser-ponyfill";
-import {getDecodedSpartanToken} from "./spartanToken";
+import {getDecodedSpartanToken, getSpartanToken} from "./spartanToken";
 
 const style = `.login-frame {
   display: flex;
@@ -141,6 +143,9 @@ customElement("spartan-login", defaultProps, (props) => {
   const [selectedRegistrationID, setSelectedRegistrationID] = createSignal("");
   const [socialProviders, setSocialProviders] = createSignal<Array<{provider: string, enabled: boolean, clientID: string}>>([]);
   const [socialLoading, setSocialLoading] = createSignal("");
+  const [mfaRequired, setMfaRequired] = createSignal(false);
+  const [signupToken, setSignupToken] = createSignal("");
+  const [enrollmentTransactionId, setEnrollmentTransactionId] = createSignal("");
   const banana = setupBanana(props.locale);
   let hostRef!: HTMLFormElement;
   let customStyles;
@@ -223,6 +228,7 @@ customElement("spartan-login", defaultProps, (props) => {
       console.log(data);
       // if self-signup is enabled, show the signup button
       setSelfSignUpAllowed(data.SelfSignUpAllowed);
+      setMfaRequired(data.MFARequired || false);
     }).catch((err: Error) => {
       console.log(err);
       setErrorMessage(err.message);
@@ -269,6 +275,101 @@ customElement("spartan-login", defaultProps, (props) => {
     });
   }
 
+  function beginSignupMFA(email: string, transactionID: string) {
+    setErrorMessage("");
+    setEnrollmentTransactionId(transactionID);
+    fetch(`${props.domain}/api/v1/signup/mfa/begin`, {
+      method: 'POST',
+      mode: 'cors',
+      cache: 'no-cache',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, sectorID: props.sector, transactionId: transactionID }),
+    }).then(response => {
+      if (response.ok) return;
+      throw new Error(banana.i18n('sa-signup-verify-error'));
+    }).then(() => {
+      setMode('signup-verify');
+    }).catch((err: Error) => {
+      setErrorMessage(err.message);
+    });
+  }
+
+  function verifySignupMFA() {
+    setErrorMessage("");
+    fetch(`${props.domain}/api/v1/signup/mfa/verify`, {
+      method: 'POST',
+      mode: 'cors',
+      cache: 'no-cache',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: username(), code: otp().toUpperCase().trim(), sectorID: props.sector, transactionId: enrollmentTransactionId() }),
+    }).then(response => {
+      if (response.ok) return response.json();
+      if (response.status === 400) throw new Error(banana.i18n('sa-signup-verify-error'));
+      throw new Error(banana.i18n('sa-signup-verify-error'));
+    }).then(data => {
+      setSignupToken(data.token);
+      localStorage.setItem('spartan-token', data.token);
+      const hostEl = (hostRef.getRootNode() as ShadowRoot).host;
+      hostEl.dispatchEvent(new CustomEvent('spartan-login', {
+        bubbles: true,
+        cancelable: true,
+        detail: { token: data.token },
+      }));
+      setOTP('');
+      setMode('signup-webauthn');
+    }).catch((err: Error) => {
+      setErrorMessage(err.message);
+    });
+  }
+
+  async function signupWebAuthn() {
+    setErrorMessage("");
+    try {
+      const beginResp = await fetch(`${props.domain}/api/v1/webauthn/registration/begin`, {
+        method: 'POST',
+        mode: 'cors',
+        cache: 'no-cache',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `bearer ${signupToken()}`,
+        },
+        body: JSON.stringify({ keyName: 'Default', sectorID: props.sector }),
+      });
+      if (!beginResp.ok) throw new Error(banana.i18n('sa-signup-webauthn-error'));
+      const beginData = await beginResp.json();
+
+      // @ts-ignore - type mismatch between Go JSON and CredentialCreationOptionsJSON but shapes are compatible
+      const options = parseCreationOptionsFromJSON(beginData.Options);
+      const credResponse = await create(options);
+      let rawBody = JSON.parse(JSON.stringify(credResponse));
+      rawBody.transactionID = beginData.TransactionID;
+
+      const finishResp = await fetch(`${props.domain}/api/v1/webauthn/registration/finish`, {
+        method: 'POST',
+        mode: 'cors',
+        cache: 'no-cache',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `bearer ${signupToken()}`,
+        },
+        body: JSON.stringify(rawBody),
+      });
+      if (!finishResp.ok) throw new Error(banana.i18n('sa-signup-webauthn-error'));
+
+      // Passkey enrolled — proceed
+      completeSignupEnrollment();
+    } catch (err: any) {
+      setErrorMessage(err?.message || String(err));
+    }
+  }
+
+  function completeSignupEnrollment() {
+    setMode(props.startMode);
+    if (props.redirect !== '') {
+      window.location.href = props.redirect;
+    }
+  }
+
   function login(e: Event) {
     e.preventDefault();
     console.log("login");
@@ -312,8 +413,12 @@ customElement("spartan-login", defaultProps, (props) => {
       }
     }).then(data => {
       console.log(data);
-      setSignUpComplete(true);
-      setMode(props.startMode);
+      if (mfaRequired()) {
+        beginSignupMFA(username(), data.enrollmentTransactionId || '');
+      } else {
+        setSignUpComplete(true);
+        setMode(props.startMode);
+      }
     }).catch((err: Error) => {
       setSignUpComplete(false);
       setErrorMessage(err.message);
@@ -394,6 +499,11 @@ customElement("spartan-login", defaultProps, (props) => {
       localStorage.setItem('spartan-txid', data.transactionID);
 
       if (!data.token) {
+        // email_enrollment: user has no MFA set up — trigger enrollment flow
+        if (data.challengeType === 'email_enrollment') {
+          beginSignupMFA(username(), data.transactionID || '');
+          return;
+        }
         // check data.challengeType to determine if otp or webauthn is required
         if (data.challengeType.indexOf('otp') !== -1) {
           listOTPRegistrations();
@@ -589,10 +699,17 @@ customElement("spartan-login", defaultProps, (props) => {
   }
 
   return (
-    <form class={'login-frame'} onSubmit={(e) => {currMode() === 'sign-up' ? signup(e) : login(e); }} ref={hostRef}>
+    <form class={'login-frame'} onSubmit={(e) => {
+      e.preventDefault();
+      if (currMode() === 'sign-up') signup(e);
+      else if (currMode() === 'signup-verify') { e.preventDefault(); verifySignupMFA(); }
+      else login(e);
+    }} ref={hostRef}>
       <style>{style}</style>
       <style>{customStyles}</style>
-      <h1>{(currMode() === 'reset-email' || currMode() === 'reset-code') ? banana.i18n('sa-reset-password') : banana.i18n('sa-login')}</h1>
+      <h1>{(currMode() === 'reset-email' || currMode() === 'reset-code') ? banana.i18n('sa-reset-password')
+        : (currMode() === 'signup-verify' || currMode() === 'signup-webauthn') ? banana.i18n('sa-signup-mfa-title')
+        : banana.i18n('sa-login')}</h1>
       {errorMessage && <span class={'error-message'}>{errorMessage()}</span>}
       {signUpComplete() && (<span>{banana.i18n('sa-signup-complete')}</span>)}
       {resetComplete() && (<span>{banana.i18n('sa-reset-success')}</span>)}
@@ -600,9 +717,10 @@ customElement("spartan-login", defaultProps, (props) => {
              placeholder={banana.i18n('sa-username')}
              value={username()}
              onInput={(e) => setUsername(e.currentTarget.value)}
-             disabled={currMode() === "otp" || currMode() === "otp-pick" || currMode() === "reset-code"}
+             disabled={currMode() === "otp" || currMode() === "otp-pick" || currMode() === "reset-code"
+               || currMode() === "signup-verify" || currMode() === "signup-webauthn"}
       ></input>
-      { currMode() !== "sign-up" && (
+      { currMode() !== "sign-up" && currMode() !== "signup-verify" && currMode() !== "signup-webauthn" && (
         <>
           {currMode() === "password" && (
             <input type="password"
@@ -670,26 +788,59 @@ customElement("spartan-login", defaultProps, (props) => {
         ></input>
       )}
 
-      <button type="submit">
-        {currMode() === 'sign-up'
-          ? banana.i18n('sa-signup')
-          : currMode() === 'otp-pick'
-            ? banana.i18n('sa-otp-send-code')
-            : currMode() === 'otp'
-              ? banana.i18n('sa-otp-verify')
-              : currMode() === 'reset-email'
-                ? banana.i18n('sa-otp-send-code')
-                : currMode() === 'reset-code'
-                  ? banana.i18n('sa-reset-submit')
-                  : banana.i18n('sa-login')}
-      </button>
+      {currMode() === "signup-verify" && (
+        <>
+          <p>{banana.i18n('sa-signup-verify-prompt')}</p>
+          <input type="text"
+                 value={otp()}
+                 placeholder={banana.i18n('sa-code')}
+                 onInput={(e) => setOTP(e.currentTarget.value)}
+                 autocomplete="one-time-code"
+          ></input>
+        </>
+      )}
+
+      {currMode() === "signup-webauthn" && (
+        <p>{banana.i18n('sa-signup-webauthn-prompt')}</p>
+      )}
+
+      {currMode() !== "signup-webauthn" && (
+        <button type="submit">
+          {currMode() === 'sign-up'
+            ? banana.i18n('sa-signup')
+            : currMode() === 'otp-pick'
+              ? banana.i18n('sa-otp-send-code')
+              : currMode() === 'otp'
+                ? banana.i18n('sa-otp-verify')
+                : currMode() === 'reset-email'
+                  ? banana.i18n('sa-otp-send-code')
+                  : currMode() === 'reset-code'
+                    ? banana.i18n('sa-reset-submit')
+                    : currMode() === 'signup-verify'
+                      ? banana.i18n('sa-otp-verify')
+                      : banana.i18n('sa-login')}
+        </button>
+      )}
+
+      {currMode() === "signup-webauthn" && (
+        <>
+          <button type="button" onClick={() => signupWebAuthn()}>
+            {banana.i18n('sa-signup-webauthn-setup')}
+          </button>
+          <a class={'centered-text'} href="#" onClick={() => completeSignupEnrollment()}>
+            {banana.i18n('sa-signup-webauthn-done')}
+          </a>
+        </>
+      )}
+
       {currMode() === "password" && (
         <a class={'centered-text'} href="#" onClick={() => { setErrorMessage(''); setResetComplete(false); setMode('reset-email'); }}>{banana.i18n('sa-forgot-password')}</a>
       )}
       {(currMode() === "reset-email" || currMode() === "reset-code") && (
         <a class={'centered-text'} href="#" onClick={() => { setErrorMessage(''); setResetCode(''); setNewPassword(''); setMode(props.startMode); }}>{banana.i18n('sa-back')}</a>
       )}
-      {selfSignUpAllowed() && currMode() !== "reset-email" && currMode() !== "reset-code" && (
+      {selfSignUpAllowed() && currMode() !== "reset-email" && currMode() !== "reset-code"
+        && currMode() !== "signup-verify" && currMode() !== "signup-webauthn" && (
         <a class={'centered-text'} href="#" onClick={() => currMode() === 'sign-up' ? setMode(props.startMode) : setMode('sign-up')}>{currMode() === 'sign-up' ? banana.i18n('sa-back') : banana.i18n('sa-signup')}</a>
       )}
 
