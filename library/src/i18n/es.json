@@ -51,6 +51,7 @@
   "sa-social-github": "Continuar con GitHub",
   "sa-social-apple": "Continuar con Apple",
   "sa-social-oidc": "Continuar con SSO",
+  "sa-loading": "Cargando...",
   "sa-social-error": "Error al iniciar sesión social",
 
   "sa-signup-mfa-title": "Verifica tu correo electrónico",

@@ -76,6 +76,11 @@ const style = `.container {
     cursor: pointer;
   }
 
+  .btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .btn.add {
     background-color: #007bff;
     color: #ffffff;
@@ -207,6 +212,7 @@ customElement("spartan-account-settings", defaultProps, (props) => {
   const [isAuthed, setIsAuthed] = createSignal(false);
   const [showAddMFA, setShowAddMFA] = createSignal(false);
   const [showMFAModal, setShowMFAModal] = createSignal(false);
+  const [isSubmitting, setIsSubmitting] = createSignal(false);
 
   // data
   const [securityKeys, setSecurityKeys] = createSignal<SecurityKey[]>([]);
@@ -281,6 +287,8 @@ customElement("spartan-account-settings", defaultProps, (props) => {
   }
 
   function beginWebAuthnRegistration() {
+    if (isSubmitting()) return;
+    setIsSubmitting(true);
     let requestInit = getFetchInit('post');
     requestInit.body = JSON.stringify({
       keyName: newKeyName(),
@@ -303,6 +311,8 @@ customElement("spartan-account-settings", defaultProps, (props) => {
       } else {
         setErrorMessage(res);
       }
+    }).finally(() => {
+      setIsSubmitting(false);
     });
   }
 
@@ -368,47 +378,51 @@ customElement("spartan-account-settings", defaultProps, (props) => {
     }
   }
 
-  async function initiateMFAValidation(destination: string, type: 'EMAIL' | 'SMS') {
-    const response = await callBeginOTPRegistration(destination, type);
-    if (response) {
-      listOTPRegistrations().then((data) => {
-        setOTPRegistrations(data.registrations);
-      });
-      setTransactionID(response.transactionID);
-      // show the MFA modal
-      setShowMFAModal(true);
-    }
+  function initiateMFAValidation(destination: string, type: 'EMAIL' | 'SMS') {
+    if (isSubmitting()) return;
+    setIsSubmitting(true);
+    callBeginOTPRegistration(destination, type).then((response) => {
+      if (response) {
+        return listOTPRegistrations().then((data) => {
+          setOTPRegistrations(data.registrations);
+          setTransactionID(response.transactionID);
+          setShowMFAModal(true);
+        });
+      }
+    }).finally(() => {
+      setIsSubmitting(false);
+    });
   }
 
-  async function callBeginOTPRegistration(destination: string, type: 'EMAIL' | 'SMS') {
+  function callBeginOTPRegistration(destination: string, type: 'EMAIL' | 'SMS') {
     let requestInit = getFetchInit('post');
     requestInit.body = JSON.stringify({
       destination: destination,
       OTPType: otpTypeEnumValue(type),
       sectorID: props.sector,
     });
-    try {
-      const res = await fetch(`${props.domain}/api/v1/otp/begin`, requestInit);
+    return fetch(`${props.domain}/api/v1/otp/begin`, requestInit).then((res) => {
       if (res.status !== 200) {
         setErrorMessage(banana.i18n('error-otp-verification'));
         return;
       }
-      return await res.json();
-    } catch (e) {
+      return res.json();
+    }).catch((e) => {
       console.error(e);
       setErrorMessage(banana.i18n('error-otp-registration'));
-      return
-    }
+      return;
+    });
   }
 
-  async function callFinishOTPRegistration(transactionID: string, otp: string) {
+  function callFinishOTPRegistration(transactionID: string, otp: string) {
+    if (isSubmitting()) return;
+    setIsSubmitting(true);
     let requestInit = getFetchInit('post');
     requestInit.body = JSON.stringify({
       transactionID: transactionID,
       password: otp,
     });
-    try {
-      const res = await fetch(`${props.domain}/api/v1/otp/finish`, requestInit);
+    fetch(`${props.domain}/api/v1/otp/finish`, requestInit).then((res) => {
       if (res.status !== 200) {
         setModalErrorMessage(banana.i18n('error-otp-verification'));
         return;
@@ -421,12 +435,14 @@ customElement("spartan-account-settings", defaultProps, (props) => {
       listOTPRegistrations().then((data) => {
         setOTPRegistrations(data.registrations);
       });
-      return await res.json();
-    } catch (e) {
+      return res.json();
+    }).catch((e) => {
       console.error(e);
       setModalErrorMessage(banana.i18n('error-otp-registration'));
       return;
-    }
+    }).finally(() => {
+      setIsSubmitting(false);
+    });
   }
 
   async function listOTPRegistrations() {
@@ -517,7 +533,7 @@ customElement("spartan-account-settings", defaultProps, (props) => {
                 <button class={'btn remove'}
                         onClick={() => setShowAddKey(false)}>{banana.i18n('sa-cancel')}</button>
                 <button class={'btn add'} onClick={() => newKeyName() !== '' && beginWebAuthnRegistration()}
-                        disabled={newKeyName() === ''}>{banana.i18n('sa-register')}</button>
+                        disabled={newKeyName() === '' || isSubmitting()}>{banana.i18n('sa-register')}</button>
               </div>
             </div>
           )}
@@ -543,7 +559,7 @@ customElement("spartan-account-settings", defaultProps, (props) => {
                   <span>{banana.i18n('sa-yes')}</span>
                 ) : <span>
                   {banana.i18n('sa-no')}
-                  &nbsp; <button class={'btn validate'} onClick={() => {initiateMFAValidation(otp.DisplayName, otp.Type === 'email' ? "EMAIL" : "SMS")}}>{banana.i18n('sa-validate')}</button>
+                  &nbsp; <button class={'btn validate'} disabled={isSubmitting()} onClick={() => {initiateMFAValidation(otp.DisplayName, otp.Type === 'email' ? "EMAIL" : "SMS")}}>{banana.i18n('sa-validate')}</button>
                   </span>
                 }</td>
                 <td>
@@ -574,14 +590,14 @@ customElement("spartan-account-settings", defaultProps, (props) => {
               <label for={'email'}>{banana.i18n('sa-email')}</label>
               <input id="email" type={'text'} placeholder={banana.i18n('sa-email')} value={newMFAEmail()}
                      onInput={(e) => setNewMFAEmail(e.currentTarget.value)}></input>
-              <button class={'btn add'}
+              <button class={'btn add'} disabled={isSubmitting()}
                       onClick={() => initiateMFAValidation(newMFAEmail(), 'EMAIL')}>{banana.i18n('sa-add-email')}</button>
             </div>
             <div class={'mfa-item'}>
               <label for={'phone'}>{banana.i18n('sa-phone')}</label>
               <input id="phone" type={'text'} placeholder={banana.i18n('sa-phone')} value={newMFAPhone()}
                      onInput={(e) => setNewMFAPhone(e.currentTarget.value)}></input>
-              <button class={'btn add'}
+              <button class={'btn add'} disabled={isSubmitting()}
                       onClick={() => initiateMFAValidation(newMFAPhone(), 'SMS')}>{banana.i18n('sa-add-sms')}</button>
             </div>
             <div class={'mfa-item'}>
@@ -599,7 +615,7 @@ customElement("spartan-account-settings", defaultProps, (props) => {
             {modalErrorMessage() && <span class={'error-message'}>{modalErrorMessage()}</span>}
             <p>Please enter the verification code sent to your email or phone:</p>
             <input type="text" id="mfaCode" placeholder="Enter verification code" value={newOTP()} onInput={(e) => setNewOTP(e.currentTarget.value)}/>
-            <button class={"btn verify"} id="verifyMfa" onClick={() => callFinishOTPRegistration(transactionID(), newOTP())}>Verify</button>
+            <button class={"btn verify"} id="verifyMfa" disabled={isSubmitting()} onClick={() => callFinishOTPRegistration(transactionID(), newOTP())}>Verify</button>
           </div>
         </div>
       )}

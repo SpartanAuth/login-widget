@@ -53,6 +53,7 @@
   "sa-social-github": "GitHubで続ける",
   "sa-social-apple": "Appleで続ける",
   "sa-social-oidc": "SSOで続ける",
+  "sa-loading": "読み込み中...",
   "sa-social-error": "ソーシャルログイン開始エラー",
 
   "sa-signup-mfa-title": "メールを確認してください",

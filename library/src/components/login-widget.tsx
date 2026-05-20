@@ -45,6 +45,11 @@ const style = `.login-frame {
     border-radius: 10px;
   }
 
+  .login-frame button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .login-frame select {
     background-color: #ffffff;
     border: 1px solid #ccc;
@@ -143,6 +148,7 @@ customElement("spartan-login", defaultProps, (props) => {
   const [selectedRegistrationID, setSelectedRegistrationID] = createSignal("");
   const [socialProviders, setSocialProviders] = createSignal<Array<{provider: string, enabled: boolean, clientID: string}>>([]);
   const [socialLoading, setSocialLoading] = createSignal("");
+  const [isSubmitting, setIsSubmitting] = createSignal(false);
   const [mfaRequired, setMfaRequired] = createSignal(false);
   const [signupToken, setSignupToken] = createSignal("");
   const [enrollmentTransactionId, setEnrollmentTransactionId] = createSignal("");
@@ -278,7 +284,7 @@ customElement("spartan-login", defaultProps, (props) => {
   function beginSignupMFA(email: string, transactionID: string) {
     setErrorMessage("");
     setEnrollmentTransactionId(transactionID);
-    fetch(`${props.domain}/api/v1/signup/mfa/begin`, {
+    return fetch(`${props.domain}/api/v1/signup/mfa/begin`, {
       method: 'POST',
       mode: 'cors',
       cache: 'no-cache',
@@ -296,7 +302,7 @@ customElement("spartan-login", defaultProps, (props) => {
 
   function verifySignupMFA() {
     setErrorMessage("");
-    fetch(`${props.domain}/api/v1/signup/mfa/verify`, {
+    return fetch(`${props.domain}/api/v1/signup/mfa/verify`, {
       method: 'POST',
       mode: 'cors',
       cache: 'no-cache',
@@ -322,29 +328,32 @@ customElement("spartan-login", defaultProps, (props) => {
     });
   }
 
-  async function signupWebAuthn() {
+  function signupWebAuthn() {
+    if (isSubmitting()) return;
+    setIsSubmitting(true);
     setErrorMessage("");
-    try {
-      const beginResp = await fetch(`${props.domain}/api/v1/webauthn/registration/begin`, {
-        method: 'POST',
-        mode: 'cors',
-        cache: 'no-cache',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `bearer ${signupToken()}`,
-        },
-        body: JSON.stringify({ keyName: 'Default', sectorID: props.sector }),
-      });
-      if (!beginResp.ok) throw new Error(banana.i18n('sa-signup-webauthn-error'));
-      const beginData = await beginResp.json();
-
+    fetch(`${props.domain}/api/v1/webauthn/registration/begin`, {
+      method: 'POST',
+      mode: 'cors',
+      cache: 'no-cache',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `bearer ${signupToken()}`,
+      },
+      body: JSON.stringify({ keyName: 'Default', sectorID: props.sector }),
+    }).then(response => {
+      if (!response.ok) throw new Error(banana.i18n('sa-signup-webauthn-error'));
+      return response.json();
+    }).then(beginData => {
       // @ts-ignore - type mismatch between Go JSON and CredentialCreationOptionsJSON but shapes are compatible
       const options = parseCreationOptionsFromJSON(beginData.Options);
-      const credResponse = await create(options);
-      let rawBody = JSON.parse(JSON.stringify(credResponse));
-      rawBody.transactionID = beginData.TransactionID;
-
-      const finishResp = await fetch(`${props.domain}/api/v1/webauthn/registration/finish`, {
+      return create(options).then(credResponse => {
+        let rawBody = JSON.parse(JSON.stringify(credResponse));
+        rawBody.transactionID = beginData.TransactionID;
+        return rawBody;
+      });
+    }).then(rawBody => {
+      return fetch(`${props.domain}/api/v1/webauthn/registration/finish`, {
         method: 'POST',
         mode: 'cors',
         cache: 'no-cache',
@@ -354,13 +363,14 @@ customElement("spartan-login", defaultProps, (props) => {
         },
         body: JSON.stringify(rawBody),
       });
+    }).then(finishResp => {
       if (!finishResp.ok) throw new Error(banana.i18n('sa-signup-webauthn-error'));
-
-      // Passkey enrolled — proceed
       completeSignupEnrollment();
-    } catch (err: any) {
+    }).catch((err: any) => {
       setErrorMessage(err?.message || String(err));
-    }
+    }).finally(() => {
+      setIsSubmitting(false);
+    });
   }
 
   function completeSignupEnrollment() {
@@ -370,33 +380,31 @@ customElement("spartan-login", defaultProps, (props) => {
     }
   }
 
-  function login(e: Event) {
-    e.preventDefault();
+  function login() {
     console.log("login");
     setErrorMessage("");
     if (currMode() === 'password') {
-      passwordLogin();
+      return passwordLogin();
     } else if (currMode() === 'webauthn') {
-      webauthnLogin();
+      return webauthnLogin();
     } else if (currMode() === 'otp-pick') {
-      // User selected a registration from the picker
-      beginOTP(selectedRegistrationID());
+      return beginOTP(selectedRegistrationID());
     } else if (currMode() === 'otp') {
-      otpLogin();
+      return otpLogin();
     } else if (currMode() === 'reset-email') {
-      beginPasswordReset();
+      return beginPasswordReset();
     } else if (currMode() === 'reset-code') {
-      completePasswordReset();
+      return completePasswordReset();
     }
+    return Promise.resolve();
   }
 
-  function signup(e: Event) {
-    e.preventDefault();
+  function signup() {
     console.log("signup");
     setErrorMessage("");
     setSignUpComplete(false);
 
-    fetch(`${props.domain}/api/v1/users`, {
+    return fetch(`${props.domain}/api/v1/users`, {
       method: 'POST',
       mode: 'cors',
       cache: 'no-cache',
@@ -414,7 +422,7 @@ customElement("spartan-login", defaultProps, (props) => {
     }).then(data => {
       console.log(data);
       if (mfaRequired()) {
-        beginSignupMFA(username(), data.enrollmentTransactionId || '');
+        return beginSignupMFA(username(), data.enrollmentTransactionId || '');
       } else {
         setSignUpComplete(true);
         setMode(props.startMode);
@@ -428,7 +436,7 @@ customElement("spartan-login", defaultProps, (props) => {
 
   function webauthnLogin() {
     console.log("webauthnLogin");
-    fetch(`${props.domain}/api/v1/login/webauthn/begin`, {
+    return fetch(`${props.domain}/api/v1/login/webauthn/begin`, {
       method: 'POST',
       mode: 'cors',
       cache: 'no-cache',
@@ -440,7 +448,6 @@ customElement("spartan-login", defaultProps, (props) => {
       if (response.ok) {
         return response.json();
       } else {
-        // handle 401
         if (response.status === 401) {
           setMode('password');
           setErrorMessage(banana.i18n('webauthn-not-enrolled'));
@@ -449,12 +456,11 @@ customElement("spartan-login", defaultProps, (props) => {
         throw new Error(`${response.status} ${response.statusText}: Network response was not ok.`);
       }
     }).then((data) => {
-      // Handle user token input here
       console.log(data);
       const publicKey = parseRequestOptionsFromJSON(data.CredentialAssertion);
       console.log("Parsed WebAuthn request options:", publicKey);
       return get(publicKey).then((pubKeyCredential) => {
-        const pubKeyBodyStr = JSON.stringify(pubKeyCredential)
+        const pubKeyBodyStr = JSON.stringify(pubKeyCredential);
         let rawBody = JSON.parse(pubKeyBodyStr);
         rawBody.transactionID = data.TransactionID;
         return rawBody;
@@ -474,7 +480,7 @@ customElement("spartan-login", defaultProps, (props) => {
 
   function passwordLogin() {
     console.log("password login");
-    fetch(props.domain + "/api/v1/login/password", {
+    return fetch(props.domain + "/api/v1/login/password", {
       method: 'post',
       mode: 'cors',
       cache: 'no-cache',
@@ -486,27 +492,22 @@ customElement("spartan-login", defaultProps, (props) => {
     }).then(handleLoginResponse);
   }
 
-  async function handleLoginResponse(response: Response) {
-    let promise = Promise.resolve(response);
-    promise.then((res) => {
-      if (response.ok) {
-        return response.json();
-      } else {
-        throw new Error('Network response was not ok.');
+  function handleLoginResponse(response: Response) {
+    return Promise.resolve(response).then((res) => {
+      if (res.ok) {
+        return res.json();
       }
+      throw res;
     }).then(data => {
       console.log(data);
       localStorage.setItem('spartan-txid', data.transactionID);
 
       if (!data.token) {
-        // email_enrollment: user has no MFA set up — trigger enrollment flow
         if (data.challengeType === 'email_enrollment') {
-          beginSignupMFA(username(), data.transactionID || '');
-          return;
+          return beginSignupMFA(username(), data.transactionID || '');
         }
-        // check data.challengeType to determine if otp or webauthn is required
         if (data.challengeType.indexOf('otp') !== -1) {
-          listOTPRegistrations();
+          return listOTPRegistrations();
         } else if (data.challengeType.indexOf('webauthn') !== -1) {
           setMode('webauthn');
           setErrorMessage(banana.i18n('sa-webauthn-required'));
@@ -518,8 +519,6 @@ customElement("spartan-login", defaultProps, (props) => {
 
       localStorage.setItem('spartan-token', data.token);
 
-
-      // emit a custom event with the token
       const event = new CustomEvent('spartan-login', {
         bubbles: true,
         cancelable: true,
@@ -529,27 +528,24 @@ customElement("spartan-login", defaultProps, (props) => {
         }
       });
 
-      // dispatch the event on the custom element
       const hostEl = (hostRef.getRootNode() as ShadowRoot).host;
       hostEl.dispatchEvent(event);
       if (redirect() !== '') {
         window.location.href = redirect();
       }
-    }).catch((res) => {
-      res.json().then((data:any) => {
+    }).catch((res: Response) => {
+      return res.json().then((data: any) => {
         console.log(data.message);
         setErrorMessage(data.message);
       }).catch((e: Error) => {
         console.log(e);
       });
-      console.log(res);
     });
-    return promise;
   }
 
   function listOTPRegistrations() {
     const txid = localStorage.getItem('spartan-txid') || '';
-    fetch(props.domain + `/api/v1/otp/${encodeURIComponent(username())}?transactionID=${encodeURIComponent(txid)}&sectorID=${encodeURIComponent(props.sector)}`, {
+    return fetch(props.domain + `/api/v1/otp/${encodeURIComponent(username())}?transactionID=${encodeURIComponent(txid)}&sectorID=${encodeURIComponent(props.sector)}`, {
       method: 'get',
       mode: 'cors',
       cache: 'no-cache',
@@ -566,10 +562,8 @@ customElement("spartan-login", defaultProps, (props) => {
         return;
       }
       if (regs.length === 1) {
-        // Auto-select the only registration
-        beginOTP(regs[0].ID || '');
+        return beginOTP(regs[0].ID || '');
       } else {
-        // Present the picker
         setOTPRegistrations(regs);
         setSelectedRegistrationID(regs[0].ID || '');
         setMode('otp-pick');
@@ -583,7 +577,7 @@ customElement("spartan-login", defaultProps, (props) => {
 
   function beginOTP(registrationID: string) {
     console.log("begin OTP, registrationID:", registrationID);
-    fetch(props.domain + "/api/v1/login/otp/begin", {
+    return fetch(props.domain + "/api/v1/login/otp/begin", {
       method: 'post',
       mode: 'cors',
       cache: 'no-cache',
@@ -601,7 +595,6 @@ customElement("spartan-login", defaultProps, (props) => {
       }
     }).then(data => {
       console.log(data);
-      // beginOTP may return a new transactionID
       if (data.transactionID) {
         localStorage.setItem('spartan-txid', data.transactionID);
       }
@@ -616,7 +609,7 @@ customElement("spartan-login", defaultProps, (props) => {
 
   function otpLogin() {
     console.log("OTP login submit");
-    fetch(props.domain + "/api/v1/login/otp", {
+    return fetch(props.domain + "/api/v1/login/otp", {
       method: 'post',
       mode: 'cors',
       cache: 'no-cache',
@@ -634,7 +627,7 @@ customElement("spartan-login", defaultProps, (props) => {
     setErrorMessage("");
     setResetComplete(false);
 
-    fetch(`${props.domain}/api/v1/password/reset/begin`, {
+    return fetch(`${props.domain}/api/v1/password/reset/begin`, {
       method: 'POST',
       mode: 'cors',
       cache: 'no-cache',
@@ -665,7 +658,7 @@ customElement("spartan-login", defaultProps, (props) => {
     console.log("complete password reset");
     setErrorMessage("");
 
-    fetch(`${props.domain}/api/v1/password/reset/complete`, {
+    return fetch(`${props.domain}/api/v1/password/reset/complete`, {
       method: 'POST',
       mode: 'cors',
       cache: 'no-cache',
@@ -701,9 +694,12 @@ customElement("spartan-login", defaultProps, (props) => {
   return (
     <form class={'login-frame'} onSubmit={(e) => {
       e.preventDefault();
-      if (currMode() === 'sign-up') signup(e);
-      else if (currMode() === 'signup-verify') { e.preventDefault(); verifySignupMFA(); }
-      else login(e);
+      if (isSubmitting()) return;
+      setIsSubmitting(true);
+      const p = currMode() === 'sign-up' ? signup()
+        : currMode() === 'signup-verify' ? verifySignupMFA()
+        : login();
+      p.finally(() => setIsSubmitting(false));
     }} ref={hostRef}>
       <style>{style}</style>
       <style>{customStyles}</style>
@@ -805,27 +801,28 @@ customElement("spartan-login", defaultProps, (props) => {
       )}
 
       {currMode() !== "signup-webauthn" && (
-        <button type="submit">
-          {currMode() === 'sign-up'
-            ? banana.i18n('sa-signup')
-            : currMode() === 'otp-pick'
-              ? banana.i18n('sa-otp-send-code')
-              : currMode() === 'otp'
-                ? banana.i18n('sa-otp-verify')
-                : currMode() === 'reset-email'
-                  ? banana.i18n('sa-otp-send-code')
-                  : currMode() === 'reset-code'
-                    ? banana.i18n('sa-reset-submit')
-                    : currMode() === 'signup-verify'
-                      ? banana.i18n('sa-otp-verify')
-                      : banana.i18n('sa-login')}
+        <button type="submit" disabled={isSubmitting()}>
+          {isSubmitting() ? banana.i18n('sa-loading')
+            : currMode() === 'sign-up'
+              ? banana.i18n('sa-signup')
+              : currMode() === 'otp-pick'
+                ? banana.i18n('sa-otp-send-code')
+                : currMode() === 'otp'
+                  ? banana.i18n('sa-otp-verify')
+                  : currMode() === 'reset-email'
+                    ? banana.i18n('sa-otp-send-code')
+                    : currMode() === 'reset-code'
+                      ? banana.i18n('sa-reset-submit')
+                      : currMode() === 'signup-verify'
+                        ? banana.i18n('sa-otp-verify')
+                        : banana.i18n('sa-login')}
         </button>
       )}
 
       {currMode() === "signup-webauthn" && (
         <>
-          <button type="button" onClick={() => signupWebAuthn()}>
-            {banana.i18n('sa-signup-webauthn-setup')}
+          <button type="button" disabled={isSubmitting()} onClick={() => signupWebAuthn()}>
+            {isSubmitting() ? banana.i18n('sa-loading') : banana.i18n('sa-signup-webauthn-setup')}
           </button>
           <a class={'centered-text'} href="#" onClick={() => completeSignupEnrollment()}>
             {banana.i18n('sa-signup-webauthn-done')}
