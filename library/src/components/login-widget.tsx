@@ -121,6 +121,24 @@ const style = `.login-frame {
     opacity: 0.6;
     cursor: not-allowed;
   }
+  .login-frame .success-message {
+    color: green;
+    margin: 10px 0;
+  }
+
+  .login-frame .info-message {
+    color: #666;
+    margin: 10px 0;
+    font-size: 0.9em;
+  }
+
+  .login-frame .hint {
+    color: #666;
+    font-size: 0.85em;
+    margin-top: 5px;
+    margin-bottom: 0;
+    display: block;
+  }
   `;
 
 const defaultProps = {
@@ -152,6 +170,12 @@ customElement("spartan-login", defaultProps, (props) => {
   const [mfaRequired, setMfaRequired] = createSignal(false);
   const [signupToken, setSignupToken] = createSignal("");
   const [enrollmentTransactionId, setEnrollmentTransactionId] = createSignal("");
+  // Invite mode state
+  const [inviteSub, setInviteSub] = createSignal("");
+  const [inviteEmail, setInviteEmail] = createSignal("");
+  const [inviteOtp, setInviteOtp] = createSignal("");
+  const [invitePassword, setInvitePassword] = createSignal("");
+  const [inviteSuccess, setInviteSuccess] = createSignal(false);
   const banana = setupBanana(props.locale);
   let hostRef!: HTMLFormElement;
   let customStyles;
@@ -211,6 +235,20 @@ customElement("spartan-login", defaultProps, (props) => {
         getSectorSettings();
         getSocialProviders();
       }
+      return;
+    }
+
+    // Handle invite link: ?sub=...&email=... with optional #otp=... in hash.
+    const subFromUrl = params.get('sub');
+    if (subFromUrl) {
+      setInviteSub(subFromUrl);
+      const emailFromUrl = params.get('email');
+      if (emailFromUrl) setInviteEmail(emailFromUrl);
+      // OTP may be embedded in the hash fragment (e.g. #otp=XXXXXX)
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const otpFromHash = hashParams.get('otp');
+      if (otpFromHash) setInviteOtp(otpFromHash);
+      setMode('invite');
       return;
     }
 
@@ -699,6 +737,106 @@ customElement("spartan-login", defaultProps, (props) => {
     });
   }
 
+  async function completeInvite() {
+    setErrorMessage("");
+
+    if (!inviteOtp() || inviteOtp().trim().length === 0) {
+      setErrorMessage(banana.i18n('sa-invite-error-otp'));
+      return;
+    }
+    if (!invitePassword() || invitePassword().length < 8) {
+      setErrorMessage("Password must be at least 8 characters");
+      return;
+    }
+    const sub = inviteSub();
+    if (!sub) {
+      setErrorMessage("Missing invitation information");
+      return;
+    }
+
+    const response = await fetch(`${props.domain}/api/v1/users/invite/complete`, {
+      method: 'POST',
+      mode: 'cors',
+      cache: 'no-cache',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sub,
+        otp: inviteOtp().toUpperCase().trim(),
+        password: invitePassword(),
+        sectorID: props.sector,
+      }),
+    }).catch(() => null);
+
+    if (!response) {
+      setErrorMessage(banana.i18n('sa-invite-error-generic'));
+      return;
+    }
+
+    if (response.ok) {
+      // Clean invite params from the address bar now that they've been consumed.
+      history.replaceState({}, '', window.location.pathname);
+      const data = await response.json().catch(() => ({}));
+      const hostEl = (hostRef.getRootNode() as ShadowRoot).host;
+
+      if (data.token) {
+        // Auto-login: store the token and dispatch spartan-login just like a normal login
+        localStorage.setItem('spartan-token', data.token);
+        hostEl.dispatchEvent(new CustomEvent('spartan-login', {
+          bubbles: true,
+          cancelable: true,
+          detail: { token: data.token },
+        }));
+        if (redirect() !== '') {
+          window.location.href = redirect();
+        } else if (props.redirect !== '') {
+          window.location.href = props.redirect;
+        } else {
+          setInviteSuccess(false);
+          setInviteSub('');
+          setInviteEmail('');
+          setInviteOtp('');
+          setInvitePassword('');
+          setMode(props.startMode);
+          getSectorSettings();
+          getSocialProviders();
+        }
+      } else {
+        // No token returned (edge case) — show success and let the user log in manually
+        setInviteSuccess(true);
+        hostEl.dispatchEvent(new CustomEvent('spartan-invite-complete', {
+          bubbles: true,
+          cancelable: true,
+          detail: { sub, success: true },
+        }));
+        setTimeout(() => {
+          if (redirect() !== '') {
+            window.location.href = redirect();
+          } else if (props.redirect !== '') {
+            window.location.href = props.redirect;
+          } else {
+            setInviteSuccess(false);
+            setInviteSub('');
+            setInviteEmail('');
+            setInviteOtp('');
+            setInvitePassword('');
+            setMode(props.startMode);
+            getSectorSettings();
+            getSocialProviders();
+          }
+        }, 2000);
+      }
+    } else {
+      const errorData = await response.json().catch(() => ({}));
+      if (response.status === 400 || String(errorData.message).includes('invalid OTP')) {
+        setErrorMessage(banana.i18n('sa-invite-error-otp'));
+      } else if (response.status === 504 || String(errorData.message).includes('expired')) {
+        setErrorMessage(banana.i18n('sa-invite-error-expired'));
+      } else {
+        setErrorMessage(errorData.message || banana.i18n('sa-invite-error-generic'));
+      }
+    }
+  }
+
   return (
     <form class={'login-frame'} onSubmit={(e) => {
       e.preventDefault();
@@ -706,6 +844,7 @@ customElement("spartan-login", defaultProps, (props) => {
       setIsSubmitting(true);
       const p = currMode() === 'sign-up' ? signup()
         : currMode() === 'signup-verify' ? verifySignupMFA()
+        : currMode() === 'invite' ? Promise.resolve(completeInvite())
         : login();
       p.finally(() => setIsSubmitting(false));
     }} ref={hostRef}>
@@ -713,195 +852,233 @@ customElement("spartan-login", defaultProps, (props) => {
       <style>{customStyles}</style>
       <h1>{(currMode() === 'reset-email' || currMode() === 'reset-code') ? banana.i18n('sa-reset-password')
         : (currMode() === 'signup-verify' || currMode() === 'signup-webauthn') ? banana.i18n('sa-signup-mfa-title')
+        : currMode() === 'invite' ? banana.i18n('sa-complete-invite')
         : banana.i18n('sa-login')}</h1>
       {errorMessage && <span class={'error-message'}>{errorMessage()}</span>}
       {signUpComplete() && (<span>{banana.i18n('sa-signup-complete')}</span>)}
       {resetComplete() && (<span>{banana.i18n('sa-reset-success')}</span>)}
-      <input type="text"
-             placeholder={banana.i18n('sa-username')}
-             value={username()}
-             onInput={(e) => setUsername(e.currentTarget.value)}
-             disabled={currMode() === "otp" || currMode() === "otp-pick" || currMode() === "reset-code"
-               || currMode() === "signup-verify" || currMode() === "signup-webauthn"}
-      ></input>
-      { currMode() !== "sign-up" && currMode() !== "signup-verify" && currMode() !== "signup-webauthn" && (
+
+      {/* ── Invite mode ── */}
+      {currMode() === 'invite' && (
         <>
-          {currMode() === "password" && (
-            <input type="password"
-                   placeholder={banana.i18n('sa-password')}
-                   value={password()}
-                   onInput={(e) => setPassword(e.currentTarget.value)}
-            ></input>
+          {inviteEmail() && (
+            <span class={'info-message'}>{inviteEmail()}</span>
           )}
-          {currMode() === "webauthn" && (
-            <span></span>
+          {inviteSuccess() && (
+            <span class={'success-message'}>{banana.i18n('sa-invite-success')}</span>
           )}
-          {currMode() === "otp-pick" && (
+          <input
+            type="text"
+            placeholder={banana.i18n('sa-invite-otp')}
+            value={inviteOtp()}
+            onInput={(e) => setInviteOtp(e.currentTarget.value)}
+            disabled={isSubmitting() || inviteSuccess()}
+            autocomplete="one-time-code"
+            required
+          />
+          <span class={'hint'}>{banana.i18n('sa-invite-otp-hint')}</span>
+          <input
+            type="password"
+            placeholder={banana.i18n('sa-invite-password')}
+            value={invitePassword()}
+            onInput={(e) => setInvitePassword(e.currentTarget.value)}
+            disabled={isSubmitting() || inviteSuccess()}
+            autocomplete="new-password"
+            required
+          />
+          <span class={'hint'}>{banana.i18n('sa-invite-password-hint')}</span>
+          <button type="submit" disabled={isSubmitting() || inviteSuccess()}>
+            {isSubmitting() ? banana.i18n('sa-invite-completing') : banana.i18n('sa-invite-submit')}
+          </button>
+        </>
+      )}
+
+      {/* ── All non-invite modes ── */}
+      {currMode() !== 'invite' && (
+        <>
+          <input type="text"
+                 placeholder={banana.i18n('sa-username')}
+                 value={username()}
+                 onInput={(e) => setUsername(e.currentTarget.value)}
+                 disabled={currMode() === "otp" || currMode() === "otp-pick" || currMode() === "reset-code"
+                   || currMode() === "signup-verify" || currMode() === "signup-webauthn"}
+          ></input>
+          { currMode() !== "sign-up" && currMode() !== "signup-verify" && currMode() !== "signup-webauthn" && (
             <>
-              <p>{banana.i18n('sa-otp-choose')}</p>
-              <select
-                value={selectedRegistrationID()}
-                onChange={(e) => setSelectedRegistrationID(e.currentTarget.value)}
-              >
-                {otpRegistrations().map((reg) => (
-                  <option value={reg.ID}>
-                    {reg.DisplayName || reg.ID} ({reg.Type})
-                  </option>
-                ))}
-              </select>
+              {currMode() === "password" && (
+                <input type="password"
+                       placeholder={banana.i18n('sa-password')}
+                       value={password()}
+                       onInput={(e) => setPassword(e.currentTarget.value)}
+                ></input>
+              )}
+              {currMode() === "webauthn" && (
+                <span></span>
+              )}
+              {currMode() === "otp-pick" && (
+                <>
+                  <p>{banana.i18n('sa-otp-choose')}</p>
+                  <select
+                    value={selectedRegistrationID()}
+                    onChange={(e) => setSelectedRegistrationID(e.currentTarget.value)}
+                  >
+                    {otpRegistrations().map((reg) => (
+                      <option value={reg.ID}>
+                        {reg.DisplayName || reg.ID} ({reg.Type})
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+              {currMode() === "otp" && (
+                <input type="text"
+                       value={otp()}
+                       placeholder={banana.i18n('sa-code')}
+                       onInput={(e) => setOTP(e.currentTarget.value)}
+                ></input>
+              )}
+              {currMode() === "reset-code" && (
+                <>
+                  <input type="text"
+                         value={resetCode()}
+                         placeholder={banana.i18n('sa-reset-code')}
+                         onInput={(e) => setResetCode(e.currentTarget.value)}
+                         autocomplete="one-time-code"
+                  ></input>
+                  <input type="password"
+                         value={newPassword()}
+                         placeholder={banana.i18n('sa-new-password')}
+                         onInput={(e) => setNewPassword(e.currentTarget.value)}
+                         autocomplete="new-password"
+                  ></input>
+                </>
+              )}
+              {(currMode() === "password" || currMode() === "webauthn") && (
+                <span class={"checkbox-wrapper"}
+                      onClick={() => setMode(currMode() === 'password' ? 'webauthn' : 'password')}>
+                  <input type="checkbox" checked={currMode() === 'password'}></input>
+                  <span>&nbsp;{banana.i18n('sa-use-password')}</span>
+                </span>
+              )}
             </>
           )}
-          {currMode() === "otp" && (
-            <input type="text"
-                   value={otp()}
-                   placeholder={banana.i18n('sa-code')}
-                   onInput={(e) => setOTP(e.currentTarget.value)}
+
+          {currMode() === "sign-up" && (
+            <input type="password"
+               placeholder={banana.i18n('sa-password')}
+               value={password()}
+               onInput={(e) => setPassword(e.currentTarget.value)}
             ></input>
           )}
-          {currMode() === "reset-code" && (
+
+          {currMode() === "signup-verify" && (
             <>
+              <p>{banana.i18n('sa-signup-verify-prompt')}</p>
               <input type="text"
-                     value={resetCode()}
-                     placeholder={banana.i18n('sa-reset-code')}
-                     onInput={(e) => setResetCode(e.currentTarget.value)}
+                     value={otp()}
+                     placeholder={banana.i18n('sa-code')}
+                     onInput={(e) => setOTP(e.currentTarget.value)}
                      autocomplete="one-time-code"
               ></input>
-              <input type="password"
-                     value={newPassword()}
-                     placeholder={banana.i18n('sa-new-password')}
-                     onInput={(e) => setNewPassword(e.currentTarget.value)}
-                     autocomplete="new-password"
-              ></input>
             </>
           )}
-          {(currMode() === "password" || currMode() === "webauthn") && (
-            <span class={"checkbox-wrapper"}
-                  onClick={() => setMode(currMode() === 'password' ? 'webauthn' : 'password')}>
-              <input type="checkbox" checked={currMode() === 'password'}></input>
-              <span>&nbsp;{banana.i18n('sa-use-password')}</span>
-            </span>
+
+          {currMode() === "signup-webauthn" && (
+            <p>{banana.i18n('sa-signup-webauthn-prompt')}</p>
           )}
-        </>
-      )}
 
-      {currMode() === "sign-up" && (
-        <input type="password"
-           placeholder={banana.i18n('sa-password')}
-           value={password()}
-           onInput={(e) => setPassword(e.currentTarget.value)}
-        ></input>
-      )}
-
-      {currMode() === "signup-verify" && (
-        <>
-          <p>{banana.i18n('sa-signup-verify-prompt')}</p>
-          <input type="text"
-                 value={otp()}
-                 placeholder={banana.i18n('sa-code')}
-                 onInput={(e) => setOTP(e.currentTarget.value)}
-                 autocomplete="one-time-code"
-          ></input>
-        </>
-      )}
-
-      {currMode() === "signup-webauthn" && (
-        <p>{banana.i18n('sa-signup-webauthn-prompt')}</p>
-      )}
-
-      {currMode() !== "signup-webauthn" && (
-        <button type="submit" disabled={isSubmitting()}>
-          {isSubmitting() ? banana.i18n('sa-loading')
-            : currMode() === 'sign-up'
-              ? banana.i18n('sa-signup')
-              : currMode() === 'otp-pick'
-                ? banana.i18n('sa-otp-send-code')
-                : currMode() === 'otp'
-                  ? banana.i18n('sa-otp-verify')
-                  : currMode() === 'reset-email'
+          {currMode() !== "signup-webauthn" && (
+            <button type="submit" disabled={isSubmitting()}>
+              {isSubmitting() ? banana.i18n('sa-loading')
+                : currMode() === 'sign-up'
+                  ? banana.i18n('sa-signup')
+                  : currMode() === 'otp-pick'
                     ? banana.i18n('sa-otp-send-code')
-                    : currMode() === 'reset-code'
-                      ? banana.i18n('sa-reset-submit')
-                      : currMode() === 'signup-verify'
-                        ? banana.i18n('sa-otp-verify')
-                        : banana.i18n('sa-login')}
-        </button>
-      )}
-
-      {currMode() === "signup-webauthn" && (
-        <>
-          <button type="button" disabled={isSubmitting()} onClick={() => signupWebAuthn()}>
-            {isSubmitting() ? banana.i18n('sa-loading') : banana.i18n('sa-signup-webauthn-setup')}
-          </button>
-          <a class={'centered-text'} href="#" onClick={() => completeSignupEnrollment()}>
-            {banana.i18n('sa-signup-webauthn-done')}
-          </a>
-        </>
-      )}
-
-      {currMode() === "password" && (
-        <a class={'centered-text'} href="#" onClick={() => { setErrorMessage(''); setResetComplete(false); setMode('reset-email'); }}>{banana.i18n('sa-forgot-password')}</a>
-      )}
-      {(currMode() === "reset-email" || currMode() === "reset-code") && (
-        <a class={'centered-text'} href="#" onClick={() => { setErrorMessage(''); setResetCode(''); setNewPassword(''); setMode(props.startMode); }}>{banana.i18n('sa-back')}</a>
-      )}
-      {selfSignUpAllowed() && currMode() !== "reset-email" && currMode() !== "reset-code"
-        && currMode() !== "signup-verify" && currMode() !== "signup-webauthn" && (
-        <a class={'centered-text'} href="#" onClick={() => currMode() === 'sign-up' ? setMode(props.startMode) : setMode('sign-up')}>{currMode() === 'sign-up' ? banana.i18n('sa-back') : banana.i18n('sa-signup')}</a>
-      )}
-
-      {socialProviders().length > 0
-        && (currMode() === 'password' || currMode() === 'webauthn' || currMode() === 'sign-up')
-        && (
-        <>
-          <div class="social-divider"><span>{banana.i18n('sa-or')}</span></div>
-          {socialProviders().map(p => (
-            <button
-              type="button"
-              class="social-btn"
-              disabled={!!socialLoading() || isSubmitting()}
-              onClick={() => initiateOAuth(p.provider)}
-            >
-              {p.provider === 'google' && (
-                <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
-                  <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" fill="#34A853"/>
-                  <path d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957C.347 6.175 0 7.548 0 9s.348 2.825.957 4.039l3.007-2.332z" fill="#FBBC05"/>
-                  <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z" fill="#EA4335"/>
-                </svg>
-              )}
-              {p.provider === 'github' && (
-                <svg width="18" height="18" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-                  <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" fill="currentColor"/>
-                </svg>
-              )}
-              {p.provider === 'apple' && (
-                // <svg width="18" height="18" viewBox="0 0 814 1000" xmlns="http://www.w3.org/2000/svg">
-                //   <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-57.8-155.5-127.4C46 790.7 0 663 0 541.8c0-207.8 134.4-317.3 266.5-317.3 100.3 0 183.4 67.7 244.6 67.7 57.3 0 147.4-71.6 260.1-71.6zm-174.5-92.5c-50.9 67-123.1 110.6-195.7 110.6-8.3 0-16.6-.8-24.8-2.5 1.7-63.2 43.3-131.2 94.1-179.3 52.7-49.9 132.7-85.3 207.3-87.5 1.6 8.8 2.4 17.7 2.4 26.7 0 61.6-28.4 127-83.3 131.9z" fill="currentColor"/>
-                // </svg>
-                <svg
-                  width="18" height="18"
-                  viewBox="20 16 16 19"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    d="M28.2226562,20.3846154 C29.0546875,20.3846154 30.0976562,19.8048315 30.71875,19.0317864 C31.28125,18.3312142 31.6914062,17.352829 31.6914062,16.3744437 C31.6914062,16.2415766 31.6796875,16.1087095 31.65625,16 C30.7304687,16.0362365 29.6171875,16.640178 28.9492187,17.4494596 C28.421875,18.06548 27.9414062,19.0317864 27.9414062,20.0222505 C27.9414062,20.1671964 27.9648438,20.3121424 27.9765625,20.3604577 C28.0351562,20.3725366 28.1289062,20.3846154 28.2226562,20.3846154 Z M25.2929688,35 C26.4296875,35 26.9335938,34.214876 28.3515625,34.214876 C29.7929688,34.214876 30.109375,34.9758423 31.375,34.9758423 C32.6171875,34.9758423 33.4492188,33.792117 34.234375,32.6325493 C35.1132812,31.3038779 35.4765625,29.9993643 35.5,29.9389701 C35.4179688,29.9148125 33.0390625,28.9122695 33.0390625,26.0979021 C33.0390625,23.6579784 34.9140625,22.5588048 35.0195312,22.474253 C33.7773438,20.6382708 31.890625,20.5899555 31.375,20.5899555 C29.9804688,20.5899555 28.84375,21.4596313 28.1289062,21.4596313 C27.3554688,21.4596313 26.3359375,20.6382708 25.1289062,20.6382708 C22.8320312,20.6382708 20.5,22.5950413 20.5,26.2911634 C20.5,28.5861411 21.3671875,31.013986 22.4335938,32.5842339 C23.3476562,33.9129053 24.1445312,35 25.2929688,35 Z"
-                    fill="currentColor"
-                    fill-rule="nonzero"
-                  />
-                </svg>
-
-              )}
-              {p.provider === 'oidc' && (
-                <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 4a3 3 0 110 6 3 3 0 010-6zm0 14c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08s5.97 1.09 6 3.08c-1.29 1.94-3.5 3.22-6 3.22z" fill="currentColor"/>
-                </svg>
-              )}
-              {p.provider === 'google' ? banana.i18n('sa-social-google')
-                : p.provider === 'github' ? banana.i18n('sa-social-github')
-                : p.provider === 'apple' ? banana.i18n('sa-social-apple')
-                : banana.i18n('sa-social-oidc')}
+                    : currMode() === 'otp'
+                      ? banana.i18n('sa-otp-verify')
+                      : currMode() === 'reset-email'
+                        ? banana.i18n('sa-otp-send-code')
+                        : currMode() === 'reset-code'
+                          ? banana.i18n('sa-reset-submit')
+                          : currMode() === 'signup-verify'
+                            ? banana.i18n('sa-otp-verify')
+                            : banana.i18n('sa-login')}
             </button>
-          ))}
+          )}
+
+          {currMode() === "signup-webauthn" && (
+            <>
+              <button type="button" disabled={isSubmitting()} onClick={() => signupWebAuthn()}>
+                {isSubmitting() ? banana.i18n('sa-loading') : banana.i18n('sa-signup-webauthn-setup')}
+              </button>
+              <a class={'centered-text'} href="#" onClick={() => completeSignupEnrollment()}>
+                {banana.i18n('sa-signup-webauthn-done')}
+              </a>
+            </>
+          )}
+
+          {currMode() === "password" && (
+            <a class={'centered-text'} href="#" onClick={() => { setErrorMessage(''); setResetComplete(false); setMode('reset-email'); }}>{banana.i18n('sa-forgot-password')}</a>
+          )}
+          {(currMode() === "reset-email" || currMode() === "reset-code") && (
+            <a class={'centered-text'} href="#" onClick={() => { setErrorMessage(''); setResetCode(''); setNewPassword(''); setMode(props.startMode); }}>{banana.i18n('sa-back')}</a>
+          )}
+          {selfSignUpAllowed() && currMode() !== "reset-email" && currMode() !== "reset-code"
+            && currMode() !== "signup-verify" && currMode() !== "signup-webauthn" && (
+            <a class={'centered-text'} href="#" onClick={() => currMode() === 'sign-up' ? setMode(props.startMode) : setMode('sign-up')}>{currMode() === 'sign-up' ? banana.i18n('sa-back') : banana.i18n('sa-signup')}</a>
+          )}
+
+          {socialProviders().length > 0
+            && (currMode() === 'password' || currMode() === 'webauthn' || currMode() === 'sign-up')
+            && (
+            <>
+              <div class="social-divider"><span>{banana.i18n('sa-or')}</span></div>
+              {socialProviders().map(p => (
+                <button
+                  type="button"
+                  class="social-btn"
+                  disabled={!!socialLoading() || isSubmitting()}
+                  onClick={() => initiateOAuth(p.provider)}
+                >
+                  {p.provider === 'google' && (
+                    <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+                      <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" fill="#34A853"/>
+                      <path d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957C.347 6.175 0 7.548 0 9s.348 2.825.957 4.039l3.007-2.332z" fill="#FBBC05"/>
+                      <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z" fill="#EA4335"/>
+                    </svg>
+                  )}
+                  {p.provider === 'github' && (
+                    <svg width="18" height="18" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                      <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" fill="currentColor"/>
+                    </svg>
+                  )}
+                  {p.provider === 'apple' && (
+                    <svg
+                      width="18" height="18"
+                      viewBox="20 16 16 19"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        d="M28.2226562,20.3846154 C29.0546875,20.3846154 30.0976562,19.8048315 30.71875,19.0317864 C31.28125,18.3312142 31.6914062,17.352829 31.6914062,16.3744437 C31.6914062,16.2415766 31.6796875,16.1087095 31.65625,16 C30.7304687,16.0362365 29.6171875,16.640178 28.9492187,17.4494596 C28.421875,18.06548 27.9414062,19.0317864 27.9414062,20.0222505 C27.9414062,20.1671964 27.9648438,20.3121424 27.9765625,20.3604577 C28.0351562,20.3725366 28.1289062,20.3846154 28.2226562,20.3846154 Z M25.2929688,35 C26.4296875,35 26.9335938,34.214876 28.3515625,34.214876 C29.7929688,34.214876 30.109375,34.9758423 31.375,34.9758423 C32.6171875,34.9758423 33.4492188,33.792117 34.234375,32.6325493 C35.1132812,31.3038779 35.4765625,29.9993643 35.5,29.9389701 C35.4179688,29.9148125 33.0390625,28.9122695 33.0390625,26.0979021 C33.0390625,23.6579784 34.9140625,22.5588048 35.0195312,22.474253 C33.7773438,20.6382708 31.890625,20.5899555 31.375,20.5899555 C29.9804688,20.5899555 28.84375,21.4596313 28.1289062,21.4596313 C27.3554688,21.4596313 26.3359375,20.6382708 25.1289062,20.6382708 C22.8320312,20.6382708 20.5,22.5950413 20.5,26.2911634 C20.5,28.5861411 21.3671875,31.013986 22.4335938,32.5842339 C23.3476562,33.9129053 24.1445312,35 25.2929688,35 Z"
+                        fill="currentColor"
+                        fill-rule="nonzero"
+                      />
+                    </svg>
+                  )}
+                  {p.provider === 'oidc' && (
+                    <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 4a3 3 0 110 6 3 3 0 010-6zm0 14c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08s5.97 1.09 6 3.08c-1.29 1.94-3.5 3.22-6 3.22z" fill="currentColor"/>
+                    </svg>
+                  )}
+                  {p.provider === 'google' ? banana.i18n('sa-social-google')
+                    : p.provider === 'github' ? banana.i18n('sa-social-github')
+                    : p.provider === 'apple' ? banana.i18n('sa-social-apple')
+                    : banana.i18n('sa-social-oidc')}
+                </button>
+              ))}
+            </>
+          )}
         </>
       )}
     </form>

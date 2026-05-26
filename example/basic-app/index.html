@@ -100,32 +100,32 @@
         }
 
         // Simple hash-based routing
-        function handleRoute() {
-          const hash = window.location.hash.slice(1); // Remove the # character
-
-          // Hide all views
-          document.querySelectorAll('.view').forEach(view => {
-            view.classList.remove('active');
-          });
-
-          if (hash.startsWith('invite')) {
-
-            // Show invite view
-            document.getElementById('invite-view').classList.add('active');
-
-            // Update the invite widget with the sub from the URL
-            const inviteWidget = document.querySelector('spartan-invite');
-          } else {
-            // Default to login view
-            document.getElementById('login-view').classList.add('active');
-          }
-        }
+        // function handleRoute() {
+        //   const hash = window.location.hash.slice(1); // Remove the # character
+        //
+        //   // Hide all views
+        //   document.querySelectorAll('.view').forEach(view => {
+        //     view.classList.remove('active');
+        //   });
+        //
+        //   if (hash.startsWith('invite')) {
+        //
+        //     // Show invite view
+        //     document.getElementById('invite-view').classList.add('active');
+        //
+        //     // Update the invite widget with the sub from the URL
+        //     const inviteWidget = document.querySelector('spartan-invite');
+        //   } else {
+        //     // Default to login view
+        //     document.getElementById('login-view').classList.add('active');
+        //   }
+        // }
 
         // Listen for hash changes
-        window.addEventListener('hashchange', handleRoute);
+        // window.addEventListener('hashchange', handleRoute);
 
         // Handle initial route on page load
-        window.addEventListener('DOMContentLoaded', handleRoute);
+        // window.addEventListener('DOMContentLoaded', handleRoute);
     </script>
     <script src="./src/index.tsx" type="module"></script>
   </body>

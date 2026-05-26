@@ -1,3 +1,9 @@
+/**
+ * @deprecated spartan-invite is deprecated and will be removed in a future release.
+ * Use spartan-login instead — it now handles invite links automatically by detecting
+ * the `?sub=` (and optional `?email=`, `#otp=`) URL parameters that invite emails produce.
+ * Point your invite email redirect URL at the same page as your login widget.
+ */
 import {createSignal, onMount} from "solid-js";
 import { customElement } from "solid-element";
 import { setupBanana } from './banana';
@@ -75,6 +81,10 @@ const defaultProps = {
 };
 
 customElement("spartan-invite", defaultProps, (props) => {
+  console.warn(
+    '[spartan-invite] <spartan-invite> is deprecated. ' +
+    'Use <spartan-login> instead — it now handles invite links by detecting ?sub= URL params automatically.'
+  );
   const [otp, setOtp] = createSignal("");
   const [password, setPassword] = createSignal("");
   const [errorMessage, setErrorMessage] = createSignal("");

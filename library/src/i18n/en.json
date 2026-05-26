@@ -59,6 +59,7 @@
   "sa-otp-send-code": "Send Code",
   "sa-otp-verify": "Verify Code",
   "sa-unknown-challenge": "Unknown challenge type.",
+  "sa-complete-invite": "Complete Your Invitation",
   "sa-invite-otp": "Verification Code",
   "sa-invite-otp-hint": "Enter the code from your invite email",
   "sa-invite-password": "Choose a Password",
