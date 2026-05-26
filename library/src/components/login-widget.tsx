@@ -180,6 +180,7 @@ customElement("spartan-login", defaultProps, (props) => {
     const oauthCode = params.get('code');
     if (oauthCode) {
       history.replaceState({}, '', window.location.pathname);
+      setIsSubmitting(true);
       try {
         const resp = await fetch(`${props.domain}/api/v1/oauth/exchange`, {
           method: 'POST',
@@ -199,9 +200,16 @@ customElement("spartan-login", defaultProps, (props) => {
         }));
         if (props.redirect !== '') {
           window.location.href = props.redirect;
+        } else {
+          setIsSubmitting(false);
+          getSectorSettings();
+          getSocialProviders();
         }
       } catch (err: any) {
         setErrorMessage(err.message || banana.i18n('sa-social-error'));
+        setIsSubmitting(false);
+        getSectorSettings();
+        getSocialProviders();
       }
       return;
     }
@@ -850,7 +858,7 @@ customElement("spartan-login", defaultProps, (props) => {
             <button
               type="button"
               class="social-btn"
-              disabled={!!socialLoading()}
+              disabled={!!socialLoading() || isSubmitting()}
               onClick={() => initiateOAuth(p.provider)}
             >
               {p.provider === 'google' && (
