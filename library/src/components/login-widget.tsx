@@ -900,6 +900,8 @@ customElement("spartan-login", defaultProps, (props) => {
                  placeholder={banana.i18n('sa-username')}
                  value={username()}
                  onInput={(e) => setUsername(e.currentTarget.value)}
+                 onChange={(e) => setUsername(e.currentTarget.value)}
+                 autocomplete="username"
                  disabled={currMode() === "otp" || currMode() === "otp-pick" || currMode() === "reset-code"
                    || currMode() === "signup-verify" || currMode() === "signup-webauthn"}
           ></input>
@@ -910,6 +912,8 @@ customElement("spartan-login", defaultProps, (props) => {
                        placeholder={banana.i18n('sa-password')}
                        value={password()}
                        onInput={(e) => setPassword(e.currentTarget.value)}
+                       onChange={(e) => setPassword(e.currentTarget.value)}
+                       autocomplete="current-password"
                 ></input>
               )}
               {currMode() === "webauthn" && (
@@ -968,6 +972,8 @@ customElement("spartan-login", defaultProps, (props) => {
                placeholder={banana.i18n('sa-password')}
                value={password()}
                onInput={(e) => setPassword(e.currentTarget.value)}
+               onChange={(e) => setPassword(e.currentTarget.value)}
+               autocomplete="new-password"
             ></input>
           )}
 
