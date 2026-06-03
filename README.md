@@ -58,6 +58,32 @@ The library exposes both UMD (`dist/sa-widgets.umd.js`) and ES module (`dist/sa-
 - Emits a `spartan-login` CustomEvent on success with `{ token, transactionID }` in `event.detail`
 - Stores the JWT in `localStorage` under `spartan-token`
 
+**Custom loading overlay (slot):**
+
+During any loading state (form submission, social login, OAuth callback) an overlay covers the entire widget. You can inject your own loading animation using the named `loading` slot:
+
+```html
+<spartan-login domain="..." sector="...">
+  <div slot="loading" style="display:flex;align-items:center;gap:8px;">
+    <my-spinner></my-spinner>
+    <span>Signing in…</span>
+  </div>
+</spartan-login>
+```
+
+The overlay container itself can be styled from outside the shadow DOM via the CSS part `loading-overlay`:
+
+```css
+spartan-login::part(loading-overlay) {
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 4px;
+}
+```
+
+When no slot content is provided the overlay shows a plain "Loading…" text so existing integrations continue to work without any changes.
+
+> **OAuth callback note:** After a successful social login (OAuth code exchange) the widget stays in its loading state — rather than flashing back to the login form — so the host application has time to handle the `spartan-login` event and remove the element. If the element is not removed within 5 seconds the widget automatically returns to the login form as a fallback.
+
 ### Invite Widget
 
 ```html

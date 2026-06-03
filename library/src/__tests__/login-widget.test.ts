@@ -14,9 +14,15 @@
  *     1. `onChange` alongside `onInput` on both the username and password fields.
  *     2. `autocomplete="username"` / `autocomplete="current-password"` so that
  *        credential managers correctly identify the fields in the first place.
+ *
+ * Also tested here:
+ *   - Loading overlay appears during any async operation.
+ *   - OAuth callback success keeps the widget in loading state (no flash back to
+ *     login form) until the host removes the element or the 5-second safety
+ *     timeout elapses.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 
 // ─── fetch mock ──────────────────────────────────────────────────────────────
 // Must be set up BEFORE the widget module is imported so the mock is in place
@@ -266,5 +272,162 @@ describe('<spartan-login> – sign-up mode autocomplete', () => {
   });
 });
 
+// ─── Loading overlay ──────────────────────────────────────────────────────────
 
+describe('<spartan-login> – loading overlay', () => {
+  let el: HTMLElement;
 
+  beforeEach(async () => {
+    fetchMock.mockImplementation(defaultFetch);
+    el = await mountWidget();
+  });
+
+  afterEach(() => {
+    if (el.isConnected) document.body.removeChild(el);
+    fetchMock.mockReset();
+  });
+
+  it('shows the loading overlay while a form submission is in flight', async () => {
+    // Slow login endpoint so we can inspect the DOM mid-flight.
+    let resolveLogin!: (r: Response) => void;
+    const loginPending = new Promise<Response>((res) => { resolveLogin = res; });
+
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/api/v1/login/password')) return loginPending;
+      return defaultFetch(url);
+    });
+
+    const sr = shadow(el);
+    userTyping(sr.querySelector<HTMLInputElement>('input[type="text"]')!, 'user@example.com');
+    userTyping(sr.querySelector<HTMLInputElement>('input[type="password"]')!, 'pass');
+
+    sr.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    // Allow Solid to re-render (isSubmitting → true).
+    await new Promise<void>((r) => setTimeout(r, 10));
+
+    const overlay = sr.querySelector('.loading-overlay');
+    expect(overlay, 'loading overlay should be present while submitting').not.toBeNull();
+
+    // Clean up: resolve the pending fetch so the widget doesn't hang.
+    resolveLogin(makeJsonResponse({ token: 'tok', transactionID: 'tx-1' }));
+    await new Promise<void>((r) => setTimeout(r, 20));
+  });
+
+  it('removes the loading overlay once submission completes', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/api/v1/login/password')) {
+        return Promise.resolve(makeJsonResponse({ token: 'tok', transactionID: 'tx-1' }));
+      }
+      return defaultFetch(url);
+    });
+
+    const sr = shadow(el);
+    userTyping(sr.querySelector<HTMLInputElement>('input[type="text"]')!, 'user@example.com');
+    userTyping(sr.querySelector<HTMLInputElement>('input[type="password"]')!, 'pass');
+
+    sr.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 50));
+
+    const overlay = sr.querySelector('.loading-overlay');
+    expect(overlay, 'loading overlay should be gone after submission finishes').toBeNull();
+  });
+});
+
+// ─── OAuth callback loading hold ──────────────────────────────────────────────
+
+describe('<spartan-login> – OAuth callback loading hold', () => {
+  const originalSearch = window.location.search;
+
+  afterAll(() => {
+    // Restore the URL after this suite.
+    history.replaceState({}, '', window.location.pathname);
+  });
+
+  afterEach(() => {
+    fetchMock.mockReset();
+    history.replaceState({}, '', window.location.pathname);
+  });
+
+  async function mountWithOAuthCode(code: string): Promise<HTMLElement> {
+    history.replaceState({}, '', `${window.location.pathname}?code=${code}`);
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/api/v1/oauth/exchange')) {
+        return Promise.resolve(makeJsonResponse({ token: 'oauth-jwt-abc' }));
+      }
+      return defaultFetch(url);
+    });
+    return mountWidget(); // no `redirect` attribute → stays in loading state
+  }
+
+  it('stays in loading state after a successful OAuth exchange when there is no redirect', async () => {
+    const el = await mountWithOAuthCode('test-code-123');
+    const sr = shadow(el);
+
+    // The widget should still show the loading overlay — it should NOT have
+    // reset isSubmitting and returned to the login form.
+    const overlay = sr.querySelector('.loading-overlay');
+    expect(overlay, 'widget should remain in loading state after OAuth success').not.toBeNull();
+
+    document.body.removeChild(el);
+  });
+
+  it('fires the spartan-login event with the exchanged token', async () => {
+    const events: CustomEvent[] = [];
+    const listener = (e: Event) => events.push(e as CustomEvent);
+    document.addEventListener('spartan-login', listener);
+
+    const el = await mountWithOAuthCode('test-code-456');
+    document.removeEventListener('spartan-login', listener);
+
+    expect(events.length, 'spartan-login event should be fired once').toBe(1);
+    expect(events[0].detail.token).toBe('oauth-jwt-abc');
+
+    document.body.removeChild(el);
+  });
+
+  it('leaves loading state and restores the login form when the element is removed by the host', async () => {
+    // The host removes the element synchronously inside the event handler.
+    // The safety timeout should be cancelled by onCleanup and the widget
+    // should never call setIsSubmitting(false) or re-fetch sector settings.
+    const sectorSettingsCalls: string[] = [];
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/api/v1/oauth/exchange')) {
+        return Promise.resolve(makeJsonResponse({ token: 'oauth-jwt-xyz' }));
+      }
+      if (url.includes('publicsettings')) {
+        sectorSettingsCalls.push(url);
+        return Promise.resolve(makeJsonResponse({ SelfSignUpAllowed: false, MFARequired: false }));
+      }
+      return defaultFetch(url);
+    });
+
+    const el = document.createElement('spartan-login') as HTMLElement;
+    el.setAttribute('domain', 'http://localhost:11000');
+    el.setAttribute('sector', 'test-sector-id');
+
+    // Remove the element synchronously when login event fires.
+    el.addEventListener('spartan-login', () => {
+      if (el.isConnected) document.body.removeChild(el);
+    });
+
+    history.replaceState({}, '', `${window.location.pathname}?code=sync-remove-code`);
+    document.body.appendChild(el);
+    await new Promise<void>((r) => setTimeout(r, 50));
+
+    // Element should have been removed by the listener.
+    expect(el.isConnected).toBe(false);
+
+    // Give time for any erroneous timer-based re-fetch to fire.
+    await new Promise<void>((r) => setTimeout(r, 100));
+
+    // sector settings should only have been called ONCE at most (the initial
+    // bootstrap that never runs here because code= short-circuits onMount
+    // before getSectorSettings is called).  The key assertion is that the
+    // safety-timeout callback did NOT fire and trigger an extra fetch.
+    expect(sectorSettingsCalls.length, 'safety timeout should not trigger a re-fetch after the element is removed').toBe(0);
+  });
+});

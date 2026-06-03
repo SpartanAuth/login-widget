@@ -1,4 +1,4 @@
-import {createSignal, onMount} from "solid-js";
+import {createSignal, onMount, onCleanup} from "solid-js";
 import { customElement } from "solid-element";
 import { setupBanana } from './banana';
 
@@ -10,7 +10,12 @@ import {
 } from "@github/webauthn-json/browser-ponyfill";
 import {getDecodedSpartanToken, getSpartanToken} from "./spartanToken";
 
-const style = `.login-frame {
+const style = `.widget-root {
+  display: block;
+  position: relative;
+}
+
+  .login-frame {
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -21,6 +26,18 @@ const style = `.login-frame {
   min-width: 290px;
   background-color: rgba(255,255,255,0.9);
 }
+
+  .loading-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 10;
+  }
 
 
   .login-frame h1 {
@@ -178,7 +195,15 @@ customElement("spartan-login", defaultProps, (props) => {
   const [inviteSuccess, setInviteSuccess] = createSignal(false);
   const banana = setupBanana(props.locale);
   let hostRef!: HTMLFormElement;
+  let oauthCallbackTimeoutRef: ReturnType<typeof setTimeout> | null = null;
   let customStyles;
+
+  // Combined loading state: true while any async operation is in flight.
+  const isLoading = () => isSubmitting() || !!socialLoading();
+
+  onCleanup(() => {
+    if (oauthCallbackTimeoutRef) clearTimeout(oauthCallbackTimeoutRef);
+  });
   try {
     customStyles = props.styles;
   } catch(e) {
@@ -217,17 +242,30 @@ customElement("spartan-login", defaultProps, (props) => {
         const data = await resp.json();
         localStorage.setItem('spartan-token', data.token);
         const hostEl = (hostRef.getRootNode() as ShadowRoot).host;
-        hostEl.dispatchEvent(new CustomEvent('spartan-login', {
-          bubbles: true,
-          cancelable: true,
-          detail: { token: data.token },
-        }));
         if (props.redirect !== '') {
+          // Fire event then navigate — widget will be gone before it can re-render.
+          hostEl.dispatchEvent(new CustomEvent('spartan-login', {
+            bubbles: true,
+            cancelable: true,
+            detail: { token: data.token },
+          }));
           window.location.href = props.redirect;
         } else {
-          setIsSubmitting(false);
-          getSectorSettings();
-          getSocialProviders();
+          // Stay in loading state so the widget does not flash back to the login
+          // form before the host app processes the event and removes the element.
+          // Arm a safety timeout first so that onCleanup can cancel it if the
+          // element is removed synchronously inside the event handler.
+          oauthCallbackTimeoutRef = setTimeout(() => {
+            oauthCallbackTimeoutRef = null;
+            setIsSubmitting(false);
+            getSectorSettings();
+            getSocialProviders();
+          }, 5000);
+          hostEl.dispatchEvent(new CustomEvent('spartan-login', {
+            bubbles: true,
+            cancelable: true,
+            detail: { token: data.token },
+          }));
         }
       } catch (err: any) {
         setErrorMessage(err.message || banana.i18n('sa-social-error'));
@@ -838,6 +876,7 @@ customElement("spartan-login", defaultProps, (props) => {
   }
 
   return (
+    <div class="widget-root">
     <form class={'login-frame'} onSubmit={(e) => {
       e.preventDefault();
       if (isSubmitting()) return;
@@ -1087,6 +1126,18 @@ customElement("spartan-login", defaultProps, (props) => {
           )}
         </>
       )}
+
+      {/* Loading overlay — covers the entire widget during any async operation.
+          Positioned as a sibling of the form (not inside it) so its size is
+          determined by .widget-root rather than the form's own box model.
+          Consumers can inject a custom animation via <div slot="loading">...</div>.
+          Falls back to a plain text indicator when no slot content is provided. */}
     </form>
+    {isLoading() && (
+      <div class="loading-overlay" part="loading-overlay">
+        <slot name="loading">{banana.i18n('sa-loading')}</slot>
+      </div>
+    )}
+    </div>
   );
 });
