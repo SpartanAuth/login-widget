@@ -165,6 +165,7 @@ const defaultProps = {
   styles: "",
   locale: "en",
   redirect: '',
+  hideSocial: false,
 };
 
 customElement("spartan-login", defaultProps, (props) => {
@@ -326,6 +327,8 @@ customElement("spartan-login", defaultProps, (props) => {
   }
 
   function getSocialProviders() {
+    // When hide-social="true" is set, skip the fetch entirely — no UI to populate.
+    if (props.hideSocial) return;
     fetch(`${props.domain}/api/v1/sectors/${props.sector}/oauth/providers`, {
       method: 'GET',
       mode: 'cors',
@@ -1073,7 +1076,7 @@ customElement("spartan-login", defaultProps, (props) => {
             <a class={'centered-text'} href="#" onClick={() => currMode() === 'sign-up' ? setMode(props.startMode) : setMode('sign-up')}>{currMode() === 'sign-up' ? banana.i18n('sa-back') : banana.i18n('sa-signup')}</a>
           )}
 
-          {socialProviders().length > 0
+          {!props.hideSocial && socialProviders().length > 0
             && (currMode() === 'password' || currMode() === 'webauthn' || currMode() === 'sign-up')
             && (
             <>

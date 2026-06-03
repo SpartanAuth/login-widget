@@ -337,7 +337,65 @@ describe('<spartan-login> – loading overlay', () => {
   });
 });
 
-// ─── OAuth callback loading hold ──────────────────────────────────────────────
+// ─── hide-social attribute ────────────────────────────────────────────────────
+
+describe('<spartan-login> – hide-social attribute', () => {
+  afterEach(() => {
+    document.body.querySelectorAll('spartan-login').forEach(el => el.remove());
+    fetchMock.mockReset();
+  });
+
+  it('suppresses social buttons and skips the oauth/providers fetch when hide-social="true"', async () => {
+    const providerCalls: string[] = [];
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('oauth/providers')) {
+        providerCalls.push(url);
+        return Promise.resolve(makeJsonResponse({ providers: [{ provider: 'google', enabled: true, clientID: 'gid' }] }));
+      }
+      return defaultFetch(url);
+    });
+
+    const el = await mountWidget({ 'hide-social': 'true' });
+    const sr = shadow(el);
+
+    // No network call should have been made for providers.
+    expect(providerCalls.length, 'oauth/providers should not be fetched when hide-social is set').toBe(0);
+    // No social buttons in the DOM.
+    const socialBtns = sr.querySelectorAll('.social-btn');
+    expect(socialBtns.length, 'social buttons should not be rendered when hide-social is set').toBe(0);
+  });
+
+  it('still shows social buttons when hide-social="false" and providers are configured', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('oauth/providers')) {
+        return Promise.resolve(makeJsonResponse({ providers: [{ provider: 'google', enabled: true, clientID: 'gid' }] }));
+      }
+      return defaultFetch(url);
+    });
+
+    const el = await mountWidget({ 'hide-social': 'false' });
+    const sr = shadow(el);
+
+    const socialBtns = sr.querySelectorAll('.social-btn');
+    expect(socialBtns.length, 'social buttons should be visible when hide-social="false"').toBeGreaterThan(0);
+  });
+
+  it('shows social buttons by default (no hide-social attribute) when providers are configured', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('oauth/providers')) {
+        return Promise.resolve(makeJsonResponse({ providers: [{ provider: 'google', enabled: true, clientID: 'gid' }] }));
+      }
+      return defaultFetch(url);
+    });
+
+    const el = await mountWidget(); // no hide-social attribute
+    const sr = shadow(el);
+
+    const socialBtns = sr.querySelectorAll('.social-btn');
+    expect(socialBtns.length, 'social buttons should be visible when hide-social is not set').toBeGreaterThan(0);
+  });
+});
+
 
 describe('<spartan-login> – OAuth callback loading hold', () => {
   const originalSearch = window.location.search;
