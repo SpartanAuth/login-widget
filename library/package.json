@@ -1,6 +1,6 @@
 {
   "name": "@masonitestudios/spartanauth-widgets",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "",
   "scripts": {
     "build": "vite build",
@@ -20,7 +20,7 @@
   "devDependencies": {
     "jsdom": "^28.1.0",
     "typescript": "^4.6.4",
-    "vite": "6.2.5",
+    "vite": "^6.4.3",
     "vite-plugin-solid": "^2.2.6",
     "vitest": "^4.1.7"
   },
