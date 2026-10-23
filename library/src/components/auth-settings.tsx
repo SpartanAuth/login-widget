@@ -1,7 +1,8 @@
-import {createSignal, onMount} from "solid-js";
+import {createSignal, onMount, Show} from "solid-js";
 import {customElement} from "solid-element";
 import {setupBanana} from './banana';
 import {getDecodedSpartanToken, getSpartanToken} from "./spartanToken";
+import {totpQrSvg} from "./totpQr";
 
 import {
   create,
@@ -186,6 +187,102 @@ const style = `.container {
 .modal-content .btn.verify:hover {
     background-color: #0056b3;
 }
+
+.modal-content.totp-modal {
+    width: 340px;
+}
+
+.qr {
+    display: flex;
+    justify-content: center;
+    margin: 10px 0;
+}
+
+.qr svg {
+    width: 180px;
+    height: 180px;
+}
+
+.secret-field {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0.04em;
+}
+
+.recovery-codes {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0;
+    text-align: left;
+}
+
+.recovery-codes li {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    padding: 4px 0;
+}
+
+.skeleton-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.skeleton > .skeleton-block {
+    margin-bottom: 20px;
+}
+
+.skeleton-line,
+.skeleton-block,
+.skeleton-row {
+    --skeleton-base: #ececec;
+    --skeleton-shine: #f7f7f7;
+    border-radius: 6px;
+    background-color: var(--skeleton-base);
+    background-image: linear-gradient(90deg, var(--skeleton-base) 0%, var(--skeleton-shine) 50%, var(--skeleton-base) 100%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+.skeleton-line {
+    height: 16px;
+    width: 42%;
+}
+
+.skeleton-block {
+    height: 36px;
+    width: 100%;
+    border-radius: 5px;
+}
+
+.skeleton-row {
+    height: 42px;
+    width: 100%;
+}
+
+@keyframes skeleton-shimmer {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .skeleton-line,
+    .skeleton-block,
+    .skeleton-row {
+        animation: none;
+    }
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
 `;
 
 const defaultProps = {
@@ -194,9 +291,20 @@ const defaultProps = {
   styles: "",
   locale: "en",
   showWebAuthn: true,
+  showTotp: true,
+  showSkeleton: false,
   redirect: '/',
   redirectOnUnauthenticated: true,
 };
+
+function flagOn(value: unknown): boolean {
+  return value !== false && value !== 'false' && value !== '0';
+}
+
+// Opt-in. Existing embeds keep painting each section as its request returns.
+function flagOptIn(value: unknown): boolean {
+  return value === true || value === 'true' || value === '1';
+}
 
 customElement("spartan-account-settings", defaultProps, (props) => {
   // inputs
@@ -221,6 +329,18 @@ customElement("spartan-account-settings", defaultProps, (props) => {
   const [newOTP, setNewOTP] = createSignal("");
   const [newMFAEmail, setNewMFAEmail] = createSignal("");
   const [newMFAPhone, setNewMFAPhone] = createSignal("");
+  const [totpRegistrations, setTotpRegistrations] = createSignal<TOTPRegistration[]>([]);
+  const [showAddTotp, setShowAddTotp] = createSignal(false);
+  const [newTotpName, setNewTotpName] = createSignal("");
+  const [showTotpEnroll, setShowTotpEnroll] = createSignal(false);
+  const [showTotpRecovery, setShowTotpRecovery] = createSignal(false);
+  const [totpSecret, setTotpSecret] = createSignal("");
+  const [totpOtpauthURL, setTotpOtpauthURL] = createSignal("");
+  const [totpRegistrationID, setTotpRegistrationID] = createSignal("");
+  const [newTotpCode, setNewTotpCode] = createSignal("");
+  const [totpRecoveryCodes, setTotpRecoveryCodes] = createSignal<string[]>([]);
+  const skeleton = flagOptIn(props.showSkeleton);
+  const [settingsLoading, setSettingsLoading] = createSignal(skeleton && !!getDecodedSpartanToken());
 
   const banana = setupBanana(props.locale);
 
@@ -252,21 +372,44 @@ customElement("spartan-account-settings", defaultProps, (props) => {
     }
 
     // get current user account settings
-    getProfile().then((data) => {
-      // TODO: display this data
-      console.log(data);
-    });
+    if (isAuthed()) {
+      try {
+        const data = await getProfile();
+        if (data && data.email) setUsername(data.email);
+      } catch (e) {
+        console.error(e);
+      }
+    }
 
-    // get security keys
-    await getSecurityKeys();
+    if (!skeleton) {
+      // get security keys
+      await getSecurityKeys();
 
-    // callBeginOTPRegistration('gomas.bmw@gmail.com', 'EMAIL').then((data) => {
-    //   console.log(data);
-    // });
+      listOTPRegistrations().then((data) => {
+        setOTPRegistrations(data.registrations);
+      });
 
-    listOTPRegistrations().then((data) => {
-      setOTPRegistrations(data.registrations);
-    });
+      if (isAuthed() && flagOn(props.showTotp)) {
+        await listTOTPRegistrations();
+      }
+      return;
+    }
+
+    // Keep the placeholder up until the first batch finishes, then paint once.
+    try {
+      const loads: Promise<unknown>[] = [
+        getSecurityKeys(),
+        listOTPRegistrations().then((data) => {
+          setOTPRegistrations(data?.registrations || []);
+        }),
+      ];
+      if (isAuthed() && flagOn(props.showTotp)) {
+        loads.push(listTOTPRegistrations());
+      }
+      await Promise.all(loads);
+    } finally {
+      setSettingsLoading(false);
+    }
   });
 
   async function getProfile() {
@@ -478,6 +621,146 @@ customElement("spartan-account-settings", defaultProps, (props) => {
     }
   }
 
+  function clearTotpSecret() {
+    setTotpSecret('');
+    setTotpOtpauthURL('');
+    setTotpRegistrationID('');
+    setNewTotpCode('');
+  }
+
+  async function listTOTPRegistrations() {
+    const name = username() || 'self';
+    try {
+      const res = await fetch(
+        `${props.domain}/api/v1/totp/${encodeURIComponent(name)}?sectorID=${encodeURIComponent(props.sector)}`,
+        getFetchInit('get'),
+      );
+      if (!res.ok) {
+        setErrorMessage(banana.i18n('error-totp-list'));
+        setTotpRegistrations([]);
+        return;
+      }
+      const data = await res.json();
+      setTotpRegistrations(data.registrations || []);
+    } catch (e) {
+      console.error(e);
+      setErrorMessage(banana.i18n('error-totp-list'));
+      setTotpRegistrations([]);
+    }
+  }
+
+  function beginTOTPRegistration() {
+    if (isSubmitting() || newTotpName().trim() === '') return;
+    setIsSubmitting(true);
+    setErrorMessage('');
+    setModalErrorMessage('');
+    const requestInit = getFetchInit('post');
+    requestInit.body = JSON.stringify({
+      sectorID: props.sector,
+      email: username(),
+      displayName: newTotpName().trim(),
+    });
+    fetch(`${props.domain}/api/v1/totp/begin`, requestInit).then(async (res) => {
+      if (res.status !== 200) {
+        const data = await res.json().catch(() => ({}));
+        setErrorMessage(data.message || banana.i18n('sa-totp-enroll-error'));
+        return;
+      }
+      const data = await res.json();
+      setTransactionID(data.transactionID || '');
+      setTotpRegistrationID(data.registrationID || '');
+      setTotpSecret(data.secret || '');
+      setTotpOtpauthURL(data.otpauthURL || '');
+      setNewTotpCode('');
+      setShowAddTotp(false);
+      setShowTotpEnroll(true);
+    }).catch((e) => {
+      console.error(e);
+      setErrorMessage(banana.i18n('sa-totp-enroll-error'));
+    }).finally(() => {
+      setIsSubmitting(false);
+    });
+  }
+
+  function finishTOTPRegistration() {
+    if (isSubmitting()) return;
+    const code = newTotpCode().replace(/\s+/g, '');
+    if (!code) {
+      setModalErrorMessage(banana.i18n('sa-totp-invalid'));
+      return;
+    }
+    setIsSubmitting(true);
+    setModalErrorMessage('');
+    const requestInit = getFetchInit('post');
+    requestInit.body = JSON.stringify({
+      sectorID: props.sector,
+      email: username(),
+      transactionID: transactionID(),
+      registrationID: totpRegistrationID(),
+      code,
+    });
+    fetch(`${props.domain}/api/v1/totp/finish`, requestInit).then(async (res) => {
+      if (res.status !== 200) {
+        const data = await res.json().catch(() => ({}));
+        setModalErrorMessage(data.message || banana.i18n('sa-totp-invalid'));
+        return;
+      }
+      const data = await res.json();
+      const codes = Array.isArray(data.recoveryCodes) ? data.recoveryCodes.filter((item: string) => !!item) : [];
+      clearTotpSecret();
+      setShowTotpEnroll(false);
+      setNewTotpName('');
+      await listTOTPRegistrations();
+      if (codes.length > 0) {
+        setTotpRecoveryCodes(codes);
+        setShowTotpRecovery(true);
+      }
+    }).catch((e) => {
+      console.error(e);
+      setModalErrorMessage(banana.i18n('sa-totp-invalid'));
+    }).finally(() => {
+      setIsSubmitting(false);
+    });
+  }
+
+  function cancelTOTPEnroll() {
+    const id = totpRegistrationID();
+    clearTotpSecret();
+    setShowTotpEnroll(false);
+    setModalErrorMessage('');
+    // The secret was shown once. Drop the unfinished registration with it.
+    if (id) {
+      removeTOTPRegistration(id);
+    }
+  }
+
+  function acknowledgeRecoveryCodes() {
+    setTotpRecoveryCodes([]);
+    setShowTotpRecovery(false);
+  }
+
+  async function removeTOTPRegistration(id: string) {
+    const requestInit = getFetchInit('delete');
+    requestInit.body = JSON.stringify({
+      ID: id,
+    });
+    try {
+      const res = await fetch(`${props.domain}/api/v1/totp/${encodeURIComponent(id)}`, requestInit);
+      if (res.status !== 200) {
+        if (res.status === 403) {
+          setErrorMessage(banana.i18n('sa-totp-last-factor'));
+        } else {
+          setErrorMessage(banana.i18n('error-totp-remove'));
+        }
+        return;
+      }
+      await listTOTPRegistrations();
+    } catch (e) {
+      console.error(e);
+      setErrorMessage(banana.i18n('error-totp-remove'));
+    }
+  }
+
   function otpTypeEnumValue(type: 'EMAIL' | 'SMS') {
     if (type === 'EMAIL') {
       return 2;
@@ -492,6 +775,24 @@ customElement("spartan-account-settings", defaultProps, (props) => {
       <style>{customStyles}</style>
       <h1 class={'header'}>{banana.i18n('sa-account-settings')}</h1>
       {errorMessage && <span class={'error-message'}>{errorMessage}</span>}
+      <Show when={!settingsLoading()} fallback={
+        <div class={'skeleton'} role="status" aria-busy="true">
+          <span class={'sr-only'}>{banana.i18n('sa-loading')}</span>
+          {showWebAuthn() && <div class={'skeleton-block'}></div>}
+          <div class={'skeleton-group'}>
+            <div class={'skeleton-line'}></div>
+            <div class={'skeleton-row'}></div>
+            <div class={'skeleton-block'}></div>
+          </div>
+          {flagOn(props.showTotp) && (
+            <div class={'skeleton-group'}>
+              <div class={'skeleton-line'}></div>
+              <div class={'skeleton-row'}></div>
+              <div class={'skeleton-block'}></div>
+            </div>
+          )}
+        </div>
+      }>
       {/*TODO: add update password section*/}
       {showWebAuthn() && !!securityKeys().length && (
         <div class={'section'}>
@@ -607,6 +908,65 @@ customElement("spartan-account-settings", defaultProps, (props) => {
           </div>
         </div>
       )}
+      {flagOn(props.showTotp) && (
+        <div class={'section'}>
+          <h2>{banana.i18n('sa-totp-title')}</h2>
+          {totpRegistrations().length === 0 && (
+            <span>{banana.i18n('sa-totp-none')}</span>
+          )}
+          {totpRegistrations().length > 0 && (
+            <table>
+              <thead>
+              <tr>
+                <th>{banana.i18n('sa-totp-name')}</th>
+                <th>{banana.i18n('sa-mfa-validated')}</th>
+                <th>{banana.i18n('sa-mfa-action')}</th>
+              </tr>
+              </thead>
+              <tbody>
+              {totpRegistrations().map((reg) => (
+                <tr class={'totp-list-item'}>
+                  <td title={reg.DisplayName}>{reg.DisplayName}</td>
+                  <td>{reg.Validated ? banana.i18n('sa-yes') : banana.i18n('sa-no')}</td>
+                  <td>
+                    <button class={'btn remove'} onClick={() => {
+                      if (confirm(banana.i18n('sa-confirm-delete-totp'))) {
+                        removeTOTPRegistration(reg.ID);
+                      }
+                    }}>{banana.i18n('sa-remove')}</button>
+                  </td>
+                </tr>
+              ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+      {flagOn(props.showTotp) && !showAddTotp() && (
+        <div class={'section'}>
+          <div class={'mfa-manage'}>
+            <button class={'btn add'}
+                    onClick={() => setShowAddTotp(true)}>+ {banana.i18n('sa-totp-add')}</button>
+          </div>
+        </div>
+      )}
+      {flagOn(props.showTotp) && showAddTotp() && (
+        <div class={'section'}>
+          <div class={'add-key-form'}>
+            <div class={'add-key-item'}>
+              <label for={'totpName'} style={'display: none;'}>{banana.i18n('sa-totp-name')}</label>
+              <input id={'totpName'} type={'text'} placeholder={banana.i18n('sa-totp-name')}
+                     value={newTotpName()}
+                     onInput={(e) => setNewTotpName(e.currentTarget.value)}/>
+              <button class={'btn remove'}
+                      onClick={() => { setShowAddTotp(false); setNewTotpName(''); }}>{banana.i18n('sa-cancel')}</button>
+              <button class={'btn add'}
+                      onClick={() => beginTOTPRegistration()}
+                      disabled={newTotpName().trim() === '' || isSubmitting()}>{banana.i18n('sa-register')}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showMFAModal() && (
         <div class={"modal"} id="mfaModal" onClick={() => setShowMFAModal(false)}>
           <div class={"modal-content"} onClick={(e) => e.stopPropagation()}>
@@ -619,6 +979,41 @@ customElement("spartan-account-settings", defaultProps, (props) => {
           </div>
         </div>
       )}
+      {showTotpEnroll() && (
+        <div class={"modal"} onClick={() => cancelTOTPEnroll()}>
+          <div class={"modal-content totp-modal"} onClick={(e) => e.stopPropagation()}>
+            <span class={"close"} onClick={() => cancelTOTPEnroll()}>&times;</span>
+            <h2>{banana.i18n('sa-totp-enroll-title')}</h2>
+            {modalErrorMessage() && <span class={'error-message'}>{modalErrorMessage()}</span>}
+            <p>{banana.i18n('sa-totp-enroll-prompt')}</p>
+            {totpOtpauthURL() && (
+              <div class={"qr"} innerHTML={totpQrSvg(totpOtpauthURL())}></div>
+            )}
+            <input class={"secret-field"} type="text" readOnly value={totpSecret()}
+                   aria-label={banana.i18n('sa-totp-secret')}/>
+            <input type="text" placeholder={banana.i18n('sa-totp-code')} value={newTotpCode()}
+                   autocomplete="one-time-code"
+                   onInput={(e) => setNewTotpCode(e.currentTarget.value)}/>
+            <button class={"btn verify"} disabled={isSubmitting()}
+                    onClick={() => finishTOTPRegistration()}>{banana.i18n('sa-totp-enroll-verify')}</button>
+          </div>
+        </div>
+      )}
+      {showTotpRecovery() && (
+        <div class={"modal"}>
+          <div class={"modal-content totp-modal"}>
+            <h2>{banana.i18n('sa-totp-recovery-title')}</h2>
+            <p>{banana.i18n('sa-totp-recovery-prompt')}</p>
+            <ul class={"recovery-codes"}>
+              {totpRecoveryCodes().map((code) => (
+                <li><code>{code}</code></li>
+              ))}
+            </ul>
+            <button class={"btn verify"} onClick={() => acknowledgeRecoveryCodes()}>{banana.i18n('sa-totp-recovery-saved')}</button>
+          </div>
+        </div>
+      )}
+      </Show>
     </div>
   );
 });
@@ -660,6 +1055,12 @@ interface SecurityKeys {
 
 interface OTPRegistration {
   Type: "email" | "phone";
+  DisplayName: string;
+  ID: string;
+  Validated: boolean;
+}
+
+interface TOTPRegistration {
   DisplayName: string;
   ID: string;
   Validated: boolean;

@@ -6,9 +6,9 @@ A collection of drop-in web components for authentication, built with [SolidJS](
 
 | Custom Element | Description |
 |---|---|
-| `<spartan-login>` | Full login form supporting password, WebAuthn (passkeys), OTP/MFA, self-sign-up, and password reset flows |
+| `<spartan-login>` | Full login form supporting password, WebAuthn (passkeys), email OTP, authenticator-app (TOTP) codes, self-sign-up, and password reset flows |
 | `<spartan-invite>` | Invitation completion form — lets invited users set their password using a one-time code |
-| `<spartan-account-settings>` | Authenticated account settings panel for managing passkeys and MFA registrations (email & SMS) |
+| `<spartan-account-settings>` | Authenticated account settings panel for managing passkeys, email MFA, and authenticator apps |
 
 ## Installation
 
@@ -52,7 +52,9 @@ The library exposes both UMD (`dist/sa-widgets.umd.js`) and ES module (`dist/sa-
 
 **Features:**
 - Password and WebAuthn (passkey) login
-- MFA / OTP challenge flow (email & SMS) with automatic registration picker when multiple methods are enrolled
+- MFA / OTP challenge flow (email) with a method picker when more than one second factor is enrolled
+- Authenticator-app (TOTP) codes and one-time recovery codes
+- Authenticator enrollment during sign-in when the sector requires MFA and the user has no second factor yet
 - Self-service sign-up (when enabled on the sector)
 - Password reset via emailed code
 - Emits a `spartan-login` CustomEvent on success with `{ token, transactionID }` in `event.detail`
@@ -122,6 +124,8 @@ The widget can also read the OTP code from the URL hash (e.g. `#invite?otp=ABC12
   locale="en"
   redirect="/"
   show-web-authn="true"
+  show-totp="true"
+  show-skeleton="true"
   redirect-on-unauthenticated="true">
 </spartan-account-settings>
 ```
@@ -135,12 +139,15 @@ The widget can also read the OTP code from the URL hash (e.g. `#invite?otp=ABC12
 | `locale` | `en` | UI language |
 | `redirect` | `/` | Redirect target (used when user is not authenticated) |
 | `show-web-authn` | `true` | Show the passkey management section |
+| `show-totp` | `true` | Show the authenticator-app section |
+| `show-skeleton` | `false` | Show a placeholder until the first settings load finishes, then paint the sections once |
 | `redirect-on-unauthenticated` | `true` | Automatically redirect unauthenticated users |
 | `styles` | `""` | Custom CSS injected into the widget's shadow DOM |
 
 **Features:**
 - List, add, and remove WebAuthn passkeys
 - List, add, validate, and remove MFA registrations (email & SMS OTP)
+- List, add, and remove authenticator apps. Setup shows a QR code and the shared secret once, then the one-time recovery codes the first time the user enrolls
 - MFA verification modal with one-time code input
 - Reads the JWT from `localStorage` (`spartan-token`) for authenticated API calls
 
@@ -151,6 +158,8 @@ All widgets render inside Shadow DOM. To override internal styles, pass a CSS st
 ```html
 <spartan-login styles=".login-frame button { background-color: #00f000; }"></spartan-login>
 ```
+
+The settings placeholder uses `.skeleton-line`, `.skeleton-block`, and `.skeleton-row`. Those classes do not share the table or button rules. Recolor the shimmer with `--skeleton-base` and `--skeleton-shine` if the defaults do not match the page.
 
 ## Internationalization
 

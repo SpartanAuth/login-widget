@@ -1,6 +1,6 @@
 {
   "name": "@masonitestudios/spartanauth-widgets",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "",
   "scripts": {
     "build": "vite build",
@@ -18,6 +18,7 @@
   },
   "license": "Apache-2.0",
   "devDependencies": {
+    "@types/node": "^20.0.0",
     "jsdom": "^28.1.0",
     "typescript": "^4.6.4",
     "vite": "^6.4.3",
@@ -26,11 +27,14 @@
   },
   "dependencies": {
     "@github/webauthn-json": "^2.0.1",
-    "@types/node": "^18.7.14",
     "banana-i18n": "^2.3.3",
     "base64-js": "^1.5.1",
     "jwt-decode": "^3.1.2",
     "solid-element": "^1.4.3",
-    "solid-js": "^1.4.2"
+    "solid-js": "^1.4.2",
+    "uqr": "^0.1.3"
+  },
+  "allowScripts": {
+    "esbuild@0.25.2": true
   }
 }
