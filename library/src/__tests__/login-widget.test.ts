@@ -489,3 +489,266 @@ describe('<spartan-login> – OAuth callback loading hold', () => {
     expect(sectorSettingsCalls.length, 'safety timeout should not trigger a re-fetch after the element is removed').toBe(0);
   });
 });
+
+describe('<spartan-login> – authenticator app (TOTP)', () => {
+  let el: HTMLElement;
+  const secret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
+
+  beforeEach(async () => {
+    localStorage.clear();
+    fetchMock.mockImplementation(defaultFetch);
+    el = await mountWidget();
+  });
+
+  afterEach(() => {
+    if (el.isConnected) document.body.removeChild(el);
+    fetchMock.mockReset();
+    localStorage.clear();
+  });
+
+  function callsTo(fragment: string) {
+    return fetchMock.mock.calls.filter(([url]) => String(url).includes(fragment));
+  }
+
+  async function submitPassword(challenge: Record<string, unknown>) {
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/api/v1/login/password')) {
+        return Promise.resolve(makeJsonResponse(challenge));
+      }
+      return defaultFetch(String(url));
+    });
+    const sr = shadow(el);
+    userTyping(sr.querySelector<HTMLInputElement>('input[type="text"]')!, 'user@example.com');
+    userTyping(sr.querySelector<HTMLInputElement>('input[type="password"]')!, 'secret');
+    sr.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+    return shadow(el);
+  }
+
+  it('opens the authenticator screen when totp is the only second factor', async () => {
+    const sr = await submitPassword({ transactionID: 'tx-1', challengeType: 'totp' });
+    expect(sr.querySelector('input.totp-code'), 'authenticator code field').not.toBeNull();
+    expect(sr.querySelector('input.totp-recovery'), 'recovery code field').not.toBeNull();
+    expect(callsTo('/api/v1/otp/').length + callsTo('/api/v1/login/otp').length).toBe(0);
+  });
+
+  it('posts the authenticator code to /api/v1/login/totp', async () => {
+    await submitPassword({ transactionID: 'tx-1', challengeType: 'totp' });
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/api/v1/login/totp')) {
+        return Promise.resolve(makeJsonResponse({ token: 'jwt-1', transactionID: 'tx-1' }));
+      }
+      return defaultFetch(String(url));
+    });
+    const sr = shadow(el);
+    userTyping(sr.querySelector<HTMLInputElement>('input.totp-code')!, '123456');
+    sr.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+
+    const call = callsTo('/api/v1/login/totp')[0];
+    expect(call, 'login/totp request').toBeDefined();
+    expect(JSON.parse(String(call[1].body))).toEqual({
+      username: 'user@example.com',
+      code: '123456',
+      transactionID: 'tx-1',
+      sectorID: 'test-sector-id',
+    });
+    expect(localStorage.getItem('spartan-token')).toBe('jwt-1');
+  });
+
+  it('sends a recovery code in the same login request and stays on the screen when it is rejected', async () => {
+    await submitPassword({ transactionID: 'tx-1', challengeType: 'totp' });
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/api/v1/login/totp')) {
+        return Promise.resolve(makeJsonResponse({ message: 'error verifying totp' }, 401));
+      }
+      return defaultFetch(String(url));
+    });
+    const sr = shadow(el);
+    userTyping(sr.querySelector<HTMLInputElement>('input.totp-code')!, '000000');
+    userTyping(sr.querySelector<HTMLInputElement>('input.totp-recovery')!, 'ABCD2345');
+    sr.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+
+    const call = callsTo('/api/v1/login/totp')[0];
+    expect(JSON.parse(String(call[1].body)).code).toBe('ABCD2345');
+    expect(sr.querySelector('input.totp-code')).not.toBeNull();
+    expect(sr.querySelector('.error-message')!.textContent).toContain('error verifying totp');
+    expect(localStorage.getItem('spartan-token')).toBeNull();
+  });
+
+  it('asks the user to choose when both email and authenticator factors are enrolled', async () => {
+    const sr = await submitPassword({ transactionID: 'tx-1', challengeType: 'otp,totp' });
+    const labels = Array.from(sr.querySelectorAll('select.mfa-choice option')).map((option) => option.textContent);
+    expect(labels).toEqual(['Email code', 'Authenticator app']);
+    expect(callsTo('/api/v1/otp/').length + callsTo('/api/v1/login/otp').length).toBe(0);
+  });
+
+  it('offers authenticator enrollment next to email enrollment', async () => {
+    const sr = await submitPassword({
+      transactionID: 'tx-9',
+      challengeType: 'email_enrollment,totp_enrollment',
+    });
+    expect(sr.querySelector('h1')!.textContent).toBe('Set up authenticator app');
+    const values = Array.from(sr.querySelectorAll('select.mfa-choice option')).map((option) => (option as HTMLOptionElement).value);
+    expect(values).toEqual(['email_enrollment', 'totp_enrollment']);
+    expect(callsTo('/api/v1/signup/mfa/begin').length).toBe(0);
+    expect(callsTo('/api/v1/totp/begin').length).toBe(0);
+  });
+
+  it('shows the shared secret once and drops it when enrollment is cancelled', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/api/v1/login/password')) {
+        return Promise.resolve(makeJsonResponse({
+          transactionID: 'tx-9',
+          challengeType: 'email_enrollment,totp_enrollment',
+        }));
+      }
+      if (String(url).includes('/api/v1/totp/begin')) {
+        return Promise.resolve(makeJsonResponse({
+          transactionID: 'tx-9',
+          registrationID: 'reg-1',
+          secret,
+          otpauthURL: `otpauth://totp/SpartanAuth:user@example.com?secret=${secret}&issuer=SpartanAuth`,
+        }));
+      }
+      return defaultFetch(String(url));
+    });
+    const sr = shadow(el);
+    userTyping(sr.querySelector<HTMLInputElement>('input[type="text"]')!, 'user@example.com');
+    userTyping(sr.querySelector<HTMLInputElement>('input[type="password"]')!, 'secret');
+    sr.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+
+    const select = shadow(el).querySelector<HTMLSelectElement>('select.mfa-choice')!;
+    select.value = 'totp_enrollment';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    shadow(el).querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+
+    const enrolled = shadow(el);
+    const beginCall = callsTo('/api/v1/totp/begin')[0];
+    expect(JSON.parse(String(beginCall[1].body))).toMatchObject({
+      email: 'user@example.com',
+      transactionID: 'tx-9',
+      sectorID: 'test-sector-id',
+    });
+    expect(enrolled.querySelector<HTMLInputElement>('input.totp-secret')!.value).toBe(secret);
+    expect(enrolled.querySelector('.qr svg')).not.toBeNull();
+
+    enrolled.querySelector<HTMLAnchorElement>('a.totp-cancel')!.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 20));
+    const cleared = shadow(el);
+    expect(cleared.querySelector('input.totp-secret')).toBeNull();
+    expect(cleared.innerHTML).not.toContain(secret);
+  });
+
+  it('stores the token only after the user confirms the recovery codes', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/api/v1/login/password')) {
+        return Promise.resolve(makeJsonResponse({ transactionID: 'tx-9', challengeType: 'totp_enrollment' }));
+      }
+      if (String(url).includes('/api/v1/totp/begin')) {
+        return Promise.resolve(makeJsonResponse({
+          transactionID: 'tx-9',
+          registrationID: 'reg-1',
+          secret,
+          otpauthURL: `otpauth://totp/SpartanAuth:user@example.com?secret=${secret}`,
+        }));
+      }
+      if (String(url).includes('/api/v1/totp/finish')) {
+        return Promise.resolve(makeJsonResponse({
+          transactionID: 'tx-9',
+          token: 'held-jwt',
+          recoveryCodes: ['CODE1111', 'CODE2222'],
+        }));
+      }
+      return defaultFetch(String(url));
+    });
+    const events: CustomEvent[] = [];
+    el.addEventListener('spartan-login', (event) => events.push(event as CustomEvent));
+
+    const sr = shadow(el);
+    userTyping(sr.querySelector<HTMLInputElement>('input[type="text"]')!, 'user@example.com');
+    userTyping(sr.querySelector<HTMLInputElement>('input[type="password"]')!, 'secret');
+    sr.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+
+    const enroll = shadow(el);
+    userTyping(enroll.querySelector<HTMLInputElement>('input.totp-code')!, '654321');
+    enroll.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+
+    const recovery = shadow(el);
+    expect(recovery.textContent).toContain('CODE1111');
+    expect(recovery.textContent).toContain('CODE2222');
+    expect(recovery.textContent).not.toContain(secret);
+    expect(localStorage.getItem('spartan-token')).toBeNull();
+    expect(events).toHaveLength(0);
+
+    const finishCall = callsTo('/api/v1/totp/finish')[0];
+    expect(JSON.parse(String(finishCall[1].body))).toMatchObject({
+      email: 'user@example.com',
+      transactionID: 'tx-9',
+      registrationID: 'reg-1',
+      code: '654321',
+      sectorID: 'test-sector-id',
+    });
+
+    recovery.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 20));
+    expect(localStorage.getItem('spartan-token')).toBe('held-jwt');
+    expect(events).toHaveLength(1);
+    expect(events[0].detail.token).toBe('held-jwt');
+    expect(shadow(el).textContent).not.toContain('CODE1111');
+  });
+
+  it('offers authenticator setup after self sign-up when MFA is required', async () => {
+    if (el.isConnected) document.body.removeChild(el);
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('publicsettings')) {
+        return Promise.resolve(makeJsonResponse({ SelfSignUpAllowed: true, MFARequired: true }));
+      }
+      if (String(url).endsWith('/api/v1/users')) {
+        return Promise.resolve(makeJsonResponse({ sub: 'new-sub', enrollmentTransactionId: 'enroll-tx' }));
+      }
+      return defaultFetch(String(url));
+    });
+    el = await mountWidget();
+    const sr = shadow(el);
+    const signupLink = Array.from(sr.querySelectorAll<HTMLAnchorElement>('a.centered-text')).at(-1)!;
+    signupLink.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }));
+    await new Promise<void>((r) => setTimeout(r, 20));
+
+    userTyping(shadow(el).querySelector<HTMLInputElement>('input[type="text"]')!, 'new@example.com');
+    userTyping(shadow(el).querySelector<HTMLInputElement>('input[type="password"]')!, 'secretsecret');
+    shadow(el).querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+
+    const values = Array.from(shadow(el).querySelectorAll('select.mfa-choice option')).map((option) => (option as HTMLOptionElement).value);
+    expect(values).toEqual(['email_enrollment', 'totp_enrollment']);
+    expect(callsTo('/api/v1/signup/mfa/begin').length).toBe(0);
+    const createCall = callsTo('/api/v1/users')[0];
+    expect(JSON.parse(String(createCall[1].body)).username).toBe('new@example.com');
+  });
+});

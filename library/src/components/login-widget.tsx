@@ -9,6 +9,7 @@ import {
   parseCreationOptionsFromJSON,
 } from "@github/webauthn-json/browser-ponyfill";
 import {getDecodedSpartanToken, getSpartanToken} from "./spartanToken";
+import {totpQrSvg} from "./totpQr";
 
 const style = `.widget-root {
   display: block;
@@ -156,6 +157,34 @@ const style = `.widget-root {
     margin-bottom: 0;
     display: block;
   }
+
+  .login-frame .qr {
+    display: flex;
+    justify-content: center;
+    margin-top: 16px;
+  }
+
+  .login-frame .qr svg {
+    width: 180px;
+    height: 180px;
+  }
+
+  .login-frame .secret-field {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: 0.04em;
+  }
+
+  .login-frame .recovery-codes {
+    list-style: none;
+    padding: 0;
+    margin: 12px 0 0 0;
+  }
+
+  .login-frame .recovery-codes li {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    padding: 4px 0;
+    text-align: left;
+  }
   `;
 
 const defaultProps = {
@@ -188,6 +217,16 @@ customElement("spartan-login", defaultProps, (props) => {
   const [mfaRequired, setMfaRequired] = createSignal(false);
   const [signupToken, setSignupToken] = createSignal("");
   const [enrollmentTransactionId, setEnrollmentTransactionId] = createSignal("");
+  const [enrollmentFromSignup, setEnrollmentFromSignup] = createSignal(false);
+  const [availableChallenges, setAvailableChallenges] = createSignal<string[]>([]);
+  const [selectedChallenge, setSelectedChallenge] = createSignal("");
+  const [totpCode, setTotpCode] = createSignal("");
+  const [recoveryCode, setRecoveryCode] = createSignal("");
+  const [totpSecret, setTotpSecret] = createSignal("");
+  const [totpOtpauthURL, setTotpOtpauthURL] = createSignal("");
+  const [totpRegistrationID, setTotpRegistrationID] = createSignal("");
+  const [totpRecoveryCodes, setTotpRecoveryCodes] = createSignal<string[]>([]);
+  const [pendingToken, setPendingToken] = createSignal("");
   // Invite mode state
   const [inviteSub, setInviteSub] = createSignal("");
   const [inviteEmail, setInviteEmail] = createSignal("");
@@ -467,6 +506,277 @@ customElement("spartan-login", defaultProps, (props) => {
     }
   }
 
+  // Match whole tokens. "totp" contains the letters "otp" and is a different factor.
+  function challengeTokens(challengeType: string): string[] {
+    return String(challengeType || '')
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
+
+  function challengeLabel(token: string): string {
+    if (token === 'otp' || token === 'email_enrollment') return banana.i18n('sa-method-otp');
+    if (token === 'totp' || token === 'totp_enrollment') return banana.i18n('sa-method-totp');
+    if (token === 'webauthn') return banana.i18n('sa-method-webauthn');
+    return token;
+  }
+
+  function clearTotpSecret() {
+    setTotpSecret('');
+    setTotpOtpauthURL('');
+    setTotpRegistrationID('');
+    setTotpCode('');
+  }
+
+  function dispatchLogin(token: string, transactionID?: string) {
+    const hostEl = (hostRef.getRootNode() as ShadowRoot).host;
+    hostEl.dispatchEvent(new CustomEvent('spartan-login', {
+      bubbles: true,
+      cancelable: true,
+      detail: {
+        token,
+        transactionID,
+      },
+    }));
+  }
+
+  function completeAuthenticated(token: string, transactionID: string) {
+    localStorage.setItem('spartan-token', token);
+    dispatchLogin(token, transactionID);
+    if (redirect() !== '') {
+      window.location.href = redirect();
+    }
+  }
+
+  function routeChallenges(tokens: string[]) {
+    const second = tokens.filter((token) => token === 'otp' || token === 'totp' || token === 'webauthn');
+    const enroll = tokens.filter((token) => token === 'email_enrollment' || token === 'totp_enrollment');
+    if (second.length === 1 && second[0] === 'otp') {
+      return listOTPRegistrations();
+    }
+    if (second.length === 1 && second[0] === 'totp') {
+      setTotpCode('');
+      setRecoveryCode('');
+      setErrorMessage('');
+      setMode('totp');
+      return;
+    }
+    if (second.length === 1 && second[0] === 'webauthn') {
+      setMode('webauthn');
+      setErrorMessage(banana.i18n('sa-webauthn-required'));
+      return;
+    }
+    if (second.length > 1) {
+      setAvailableChallenges(second);
+      setSelectedChallenge(second[0]);
+      setErrorMessage('');
+      setMode('mfa-pick');
+      return;
+    }
+    if (enroll.length === 1 && enroll[0] === 'email_enrollment') {
+      return beginSignupMFA(username(), enrollmentTransactionId() || localStorage.getItem('spartan-txid') || '');
+    }
+    if (enroll.length === 1 && enroll[0] === 'totp_enrollment') {
+      setAvailableChallenges(enroll);
+      return beginTOTPEnrollment();
+    }
+    if (enroll.length > 1) {
+      setAvailableChallenges(enroll);
+      setSelectedChallenge(enroll[0]);
+      setErrorMessage('');
+      setMode('enroll-pick');
+      return;
+    }
+    setErrorMessage(banana.i18n('sa-unknown-challenge'));
+  }
+
+  function continueSelectedChallenge() {
+    const choice = selectedChallenge();
+    if (choice === 'otp') return listOTPRegistrations();
+    if (choice === 'totp') {
+      setTotpCode('');
+      setRecoveryCode('');
+      setErrorMessage('');
+      setMode('totp');
+      return Promise.resolve();
+    }
+    if (choice === 'webauthn') return webauthnLogin();
+    if (choice === 'email_enrollment') {
+      return beginSignupMFA(username(), enrollmentTransactionId() || localStorage.getItem('spartan-txid') || '');
+    }
+    if (choice === 'totp_enrollment') return beginTOTPEnrollment();
+    setErrorMessage(banana.i18n('sa-unknown-challenge'));
+    return Promise.resolve();
+  }
+
+  function beginTOTPEnrollment() {
+    setErrorMessage('');
+    const tx = enrollmentTransactionId() || localStorage.getItem('spartan-txid') || '';
+    return fetch(`${props.domain}/api/v1/totp/begin`, {
+      method: 'POST',
+      mode: 'cors',
+      cache: 'no-cache',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sectorID: props.sector,
+        email: username(),
+        transactionID: tx,
+        displayName: '',
+      }),
+    }).then(async (response) => {
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || banana.i18n('sa-totp-enroll-error'));
+      }
+      return response.json();
+    }).then((data) => {
+      if (data.transactionID) {
+        localStorage.setItem('spartan-txid', data.transactionID);
+        setEnrollmentTransactionId(data.transactionID);
+      }
+      setTotpRegistrationID(data.registrationID || '');
+      setTotpSecret(data.secret || '');
+      setTotpOtpauthURL(data.otpauthURL || '');
+      setTotpCode('');
+      setMode('totp-enroll');
+    }).catch((err: Error) => {
+      setErrorMessage(err.message);
+    });
+  }
+
+  function finishTOTPEnrollment() {
+    setErrorMessage('');
+    const code = totpCode().replace(/\s+/g, '');
+    if (!code) {
+      setErrorMessage(banana.i18n('sa-totp-invalid'));
+      return Promise.resolve();
+    }
+    return fetch(`${props.domain}/api/v1/totp/finish`, {
+      method: 'POST',
+      mode: 'cors',
+      cache: 'no-cache',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sectorID: props.sector,
+        email: username(),
+        transactionID: enrollmentTransactionId() || localStorage.getItem('spartan-txid') || '',
+        registrationID: totpRegistrationID(),
+        code,
+      }),
+    }).then(async (response) => {
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || banana.i18n('sa-totp-invalid'));
+      }
+      return response.json();
+    }).then((data) => {
+      clearTotpSecret();
+      const codes = Array.isArray(data.recoveryCodes) ? data.recoveryCodes.filter((item: string) => !!item) : [];
+      if (codes.length > 0) {
+        setTotpRecoveryCodes(codes);
+        setPendingToken(data.token || '');
+        setMode('totp-recovery');
+        return;
+      }
+      if (data.token) {
+        finishEnrollmentLogin(data.token, data.transactionID || '');
+        return;
+      }
+      setErrorMessage(banana.i18n('sa-totp-enroll-error'));
+    }).catch((err: Error) => {
+      setErrorMessage(err.message);
+    });
+  }
+
+  function finishEnrollmentLogin(token: string, transactionID: string) {
+    if (enrollmentFromSignup()) {
+      setSignupToken(token);
+      localStorage.setItem('spartan-token', token);
+      dispatchLogin(token, transactionID);
+      setMode('signup-webauthn');
+      return;
+    }
+    completeAuthenticated(token, transactionID);
+  }
+
+  function confirmRecoveryCodes() {
+    const token = pendingToken();
+    const transactionID = localStorage.getItem('spartan-txid') || '';
+    setTotpRecoveryCodes([]);
+    setPendingToken('');
+    clearTotpSecret();
+    if (!token) {
+      setMode(props.startMode);
+      return;
+    }
+    finishEnrollmentLogin(token, transactionID);
+  }
+
+  function cancelTOTPEnrollment() {
+    clearTotpSecret();
+    setErrorMessage('');
+    if (availableChallenges().indexOf('email_enrollment') !== -1 || enrollmentFromSignup()) {
+      setMode('enroll-pick');
+      return;
+    }
+    setMode(props.startMode);
+  }
+
+  function totpLogin() {
+    const recovery = recoveryCode().replace(/\s+/g, '');
+    const code = recovery || totpCode().replace(/\s+/g, '');
+    if (!code) {
+      setErrorMessage(banana.i18n('sa-totp-invalid'));
+      return Promise.resolve();
+    }
+    return fetch(`${props.domain}/api/v1/login/totp`, {
+      method: 'POST',
+      mode: 'cors',
+      cache: 'no-cache',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: username(),
+        code,
+        transactionID: localStorage.getItem('spartan-txid'),
+        sectorID: props.sector,
+      }),
+    }).then(handleLoginResponse);
+  }
+
+  function submitLabel(): string {
+    if (isSubmitting()) return banana.i18n('sa-loading');
+    const mode = currMode();
+    if (mode === 'sign-up') return banana.i18n('sa-signup');
+    if (mode === 'otp-pick') return banana.i18n('sa-otp-send-code');
+    if (mode === 'otp' || mode === 'signup-verify') return banana.i18n('sa-otp-verify');
+    if (mode === 'reset-email') return banana.i18n('sa-otp-send-code');
+    if (mode === 'reset-code') return banana.i18n('sa-reset-submit');
+    if (mode === 'totp') return banana.i18n('sa-totp-verify');
+    if (mode === 'totp-enroll') return banana.i18n('sa-totp-enroll-verify');
+    if (mode === 'totp-recovery') return banana.i18n('sa-totp-recovery-saved');
+    if (mode === 'mfa-pick' || mode === 'enroll-pick') return banana.i18n('sa-continue');
+    return banana.i18n('sa-login');
+  }
+
+  function usernameLocked(): boolean {
+    const mode = currMode();
+    return mode === 'otp' || mode === 'otp-pick' || mode === 'reset-code'
+      || mode === 'signup-verify' || mode === 'signup-webauthn'
+      || mode === 'totp' || mode === 'totp-enroll' || mode === 'totp-recovery'
+      || mode === 'mfa-pick' || mode === 'enroll-pick';
+  }
+
+  function heading(): string {
+    const mode = currMode();
+    if (mode === 'reset-email' || mode === 'reset-code') return banana.i18n('sa-reset-password');
+    if (mode === 'signup-verify' || mode === 'signup-webauthn') return banana.i18n('sa-signup-mfa-title');
+    if (mode === 'invite') return banana.i18n('sa-complete-invite');
+    if (mode === 'totp-enroll' || mode === 'enroll-pick') return banana.i18n('sa-totp-enroll-title');
+    if (mode === 'totp-recovery') return banana.i18n('sa-totp-recovery-title');
+    if (mode === 'totp') return banana.i18n('sa-method-totp');
+    return banana.i18n('sa-login');
+  }
+
   function login() {
     console.log("login");
     setErrorMessage("");
@@ -478,6 +788,15 @@ customElement("spartan-login", defaultProps, (props) => {
       return beginOTP(selectedRegistrationID());
     } else if (currMode() === 'otp') {
       return otpLogin();
+    } else if (currMode() === 'totp') {
+      return totpLogin();
+    } else if (currMode() === 'totp-enroll') {
+      return finishTOTPEnrollment();
+    } else if (currMode() === 'totp-recovery') {
+      confirmRecoveryCodes();
+      return Promise.resolve();
+    } else if (currMode() === 'mfa-pick' || currMode() === 'enroll-pick') {
+      return continueSelectedChallenge();
     } else if (currMode() === 'reset-email') {
       return beginPasswordReset();
     } else if (currMode() === 'reset-code') {
@@ -490,6 +809,7 @@ customElement("spartan-login", defaultProps, (props) => {
     console.log("signup");
     setErrorMessage("");
     setSignUpComplete(false);
+    setEnrollmentFromSignup(true);
 
     return fetch(`${props.domain}/api/v1/users`, {
       method: 'POST',
@@ -509,7 +829,15 @@ customElement("spartan-login", defaultProps, (props) => {
     }).then(data => {
       console.log(data);
       if (mfaRequired()) {
-        return beginSignupMFA(username(), data.enrollmentTransactionId || '');
+        const tx = data.enrollmentTransactionId || '';
+        setEnrollmentTransactionId(tx);
+        if (tx) {
+          localStorage.setItem('spartan-txid', tx);
+        }
+        setAvailableChallenges(['email_enrollment', 'totp_enrollment']);
+        setSelectedChallenge('email_enrollment');
+        setMode('enroll-pick');
+        return;
       } else {
         setSignUpComplete(true);
         setMode(props.startMode);
@@ -567,6 +895,7 @@ customElement("spartan-login", defaultProps, (props) => {
 
   function passwordLogin() {
     console.log("password login");
+    setEnrollmentFromSignup(false);
     return fetch(props.domain + "/api/v1/login/password", {
       method: 'post',
       mode: 'cors',
@@ -588,20 +917,12 @@ customElement("spartan-login", defaultProps, (props) => {
     }).then(data => {
       console.log(data);
       localStorage.setItem('spartan-txid', data.transactionID);
+      if (data.transactionID) {
+        setEnrollmentTransactionId(data.transactionID);
+      }
 
       if (!data.token) {
-        if (data.challengeType === 'email_enrollment') {
-          return beginSignupMFA(username(), data.transactionID || '');
-        }
-        if (data.challengeType.indexOf('otp') !== -1) {
-          return listOTPRegistrations();
-        } else if (data.challengeType.indexOf('webauthn') !== -1) {
-          setMode('webauthn');
-          setErrorMessage(banana.i18n('sa-webauthn-required'));
-        } else {
-          setErrorMessage(banana.i18n('sa-unknown-challenge'));
-        }
-        return;
+        return routeChallenges(challengeTokens(data.challengeType));
       }
 
       localStorage.setItem('spartan-token', data.token);
@@ -892,10 +1213,7 @@ customElement("spartan-login", defaultProps, (props) => {
     }} ref={hostRef}>
       <style>{style}</style>
       <style>{customStyles}</style>
-      <h1>{(currMode() === 'reset-email' || currMode() === 'reset-code') ? banana.i18n('sa-reset-password')
-        : (currMode() === 'signup-verify' || currMode() === 'signup-webauthn') ? banana.i18n('sa-signup-mfa-title')
-        : currMode() === 'invite' ? banana.i18n('sa-complete-invite')
-        : banana.i18n('sa-login')}</h1>
+      <h1>{heading()}</h1>
       {errorMessage && <span class={'error-message'}>{errorMessage()}</span>}
       {signUpComplete() && (<span>{banana.i18n('sa-signup-complete')}</span>)}
       {resetComplete() && (<span>{banana.i18n('sa-reset-success')}</span>)}
@@ -944,8 +1262,7 @@ customElement("spartan-login", defaultProps, (props) => {
                  onInput={(e) => setUsername(e.currentTarget.value)}
                  onChange={(e) => setUsername(e.currentTarget.value)}
                  autocomplete="username"
-                 disabled={currMode() === "otp" || currMode() === "otp-pick" || currMode() === "reset-code"
-                   || currMode() === "signup-verify" || currMode() === "signup-webauthn"}
+                 disabled={usernameLocked()}
           ></input>
           { currMode() !== "sign-up" && currMode() !== "signup-verify" && currMode() !== "signup-webauthn" && (
             <>
@@ -982,6 +1299,73 @@ customElement("spartan-login", defaultProps, (props) => {
                        placeholder={banana.i18n('sa-code')}
                        onInput={(e) => setOTP(e.currentTarget.value)}
                 ></input>
+              )}
+              {(currMode() === "mfa-pick" || currMode() === "enroll-pick") && (
+                <>
+                  <p>{currMode() === "mfa-pick" ? banana.i18n('sa-mfa-choose') : banana.i18n('sa-enroll-choose')}</p>
+                  <select
+                    class="mfa-choice"
+                    value={selectedChallenge()}
+                    onChange={(e) => setSelectedChallenge(e.currentTarget.value)}
+                  >
+                    {availableChallenges().map((token) => (
+                      <option value={token}>{challengeLabel(token)}</option>
+                    ))}
+                  </select>
+                </>
+              )}
+              {currMode() === "totp" && (
+                <>
+                  <p>{banana.i18n('sa-totp-prompt')}</p>
+                  <input type="text"
+                         class="totp-code"
+                         value={totpCode()}
+                         placeholder={banana.i18n('sa-totp-code')}
+                         onInput={(e) => setTotpCode(e.currentTarget.value)}
+                         autocomplete="one-time-code"
+                         inputMode="numeric"
+                  ></input>
+                  <input type="text"
+                         class="totp-recovery"
+                         value={recoveryCode()}
+                         placeholder={banana.i18n('sa-totp-recovery')}
+                         onInput={(e) => setRecoveryCode(e.currentTarget.value)}
+                         autocomplete="off"
+                  ></input>
+                  <span class="hint">{banana.i18n('sa-totp-recovery-hint')}</span>
+                </>
+              )}
+              {currMode() === "totp-enroll" && (
+                <>
+                  <p>{banana.i18n('sa-totp-enroll-prompt')}</p>
+                  {totpOtpauthURL() && (
+                    <div class="qr" innerHTML={totpQrSvg(totpOtpauthURL())}></div>
+                  )}
+                  <input type="text"
+                         class="totp-secret secret-field"
+                         readOnly
+                         value={totpSecret()}
+                         aria-label={banana.i18n('sa-totp-secret')}
+                  ></input>
+                  <input type="text"
+                         class="totp-code"
+                         value={totpCode()}
+                         placeholder={banana.i18n('sa-totp-code')}
+                         onInput={(e) => setTotpCode(e.currentTarget.value)}
+                         autocomplete="one-time-code"
+                         inputMode="numeric"
+                  ></input>
+                </>
+              )}
+              {currMode() === "totp-recovery" && (
+                <>
+                  <p>{banana.i18n('sa-totp-recovery-prompt')}</p>
+                  <ul class="recovery-codes">
+                    {totpRecoveryCodes().map((code) => (
+                      <li><code>{code}</code></li>
+                    ))}
+                  </ul>
+                </>
               )}
               {currMode() === "reset-code" && (
                 <>
@@ -1037,20 +1421,7 @@ customElement("spartan-login", defaultProps, (props) => {
 
           {currMode() !== "signup-webauthn" && (
             <button type="submit" disabled={isSubmitting()}>
-              {isSubmitting() ? banana.i18n('sa-loading')
-                : currMode() === 'sign-up'
-                  ? banana.i18n('sa-signup')
-                  : currMode() === 'otp-pick'
-                    ? banana.i18n('sa-otp-send-code')
-                    : currMode() === 'otp'
-                      ? banana.i18n('sa-otp-verify')
-                      : currMode() === 'reset-email'
-                        ? banana.i18n('sa-otp-send-code')
-                        : currMode() === 'reset-code'
-                          ? banana.i18n('sa-reset-submit')
-                          : currMode() === 'signup-verify'
-                            ? banana.i18n('sa-otp-verify')
-                            : banana.i18n('sa-login')}
+              {submitLabel()}
             </button>
           )}
 
@@ -1071,8 +1442,16 @@ customElement("spartan-login", defaultProps, (props) => {
           {(currMode() === "reset-email" || currMode() === "reset-code") && (
             <a class={'centered-text'} href="#" onClick={() => { setErrorMessage(''); setResetCode(''); setNewPassword(''); setMode(props.startMode); }}>{banana.i18n('sa-back')}</a>
           )}
+          {(currMode() === "totp" || currMode() === "otp" || currMode() === "otp-pick") && availableChallenges().length > 1 && (
+            <a class={'centered-text'} href="#" onClick={(e) => { e.preventDefault(); setErrorMessage(''); setMode('mfa-pick'); }}>{banana.i18n('sa-back')}</a>
+          )}
+          {currMode() === "totp-enroll" && (
+            <a class={'centered-text totp-cancel'} href="#" onClick={(e) => { e.preventDefault(); cancelTOTPEnrollment(); }}>{banana.i18n('sa-cancel')}</a>
+          )}
           {selfSignUpAllowed() && currMode() !== "reset-email" && currMode() !== "reset-code"
-            && currMode() !== "signup-verify" && currMode() !== "signup-webauthn" && (
+            && currMode() !== "signup-verify" && currMode() !== "signup-webauthn"
+            && currMode() !== "totp" && currMode() !== "totp-enroll" && currMode() !== "totp-recovery"
+            && currMode() !== "mfa-pick" && currMode() !== "enroll-pick" && (
             <a class={'centered-text'} href="#" onClick={() => currMode() === 'sign-up' ? setMode(props.startMode) : setMode('sign-up')}>{currMode() === 'sign-up' ? banana.i18n('sa-back') : banana.i18n('sa-signup')}</a>
           )}
 
