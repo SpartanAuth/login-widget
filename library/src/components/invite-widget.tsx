@@ -7,6 +7,7 @@
 import {createSignal, onMount} from "solid-js";
 import { customElement } from "solid-element";
 import { setupBanana } from './banana';
+import { passwordCheckMessage } from './passwordCheck';
 
 const style = `.invite-frame {
   display: flex;
@@ -239,7 +240,10 @@ customElement("spartan-invite", defaultProps, (props) => {
         // Handle error responses
         const errorData = await response.json().catch(() => ({}));
 
-        if (response.status === 400 || errorData.message?.includes('invalid OTP')) {
+        const checked = passwordCheckMessage(errorData.message);
+        if (checked) {
+          setErrorMessage(checked);
+        } else if (response.status === 400 || errorData.message?.includes('invalid OTP')) {
           setErrorMessage(banana.i18n('sa-invite-error-otp'));
         } else if (response.status === 504 || errorData.message?.includes('expired')) {
           setErrorMessage(banana.i18n('sa-invite-error-expired'));

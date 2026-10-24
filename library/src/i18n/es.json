@@ -89,5 +89,15 @@
   "sa-confirm-delete-totp": "¿Eliminar esta aplicación de autenticación?",
   "error-totp-remove": "Error al eliminar la aplicación de autenticación",
   "error-totp-list": "Error al listar las aplicaciones de autenticación",
-  "sa-totp-last-factor": "Un administrador debe desactivar la autenticación multifactor obligatoria antes de que puedas eliminar tu último método de inicio de sesión."
+  "sa-totp-last-factor": "Un administrador debe desactivar la autenticación multifactor obligatoria antes de que puedas eliminar tu último método de inicio de sesión.",
+
+  "sa-pwned-login-title": "Restablece tu contraseña",
+  "sa-pwned-login-prompt": "Esta contraseña apareció en una filtración de datos, así que el inicio de sesión está en pausa. Te enviaremos un código por correo para elegir una nueva.",
+  "sa-pwned-send-reset": "Enviarme un código de restablecimiento",
+  "sa-pwned-warning": "Esta contraseña apareció en una filtración de datos conocida. Elige una nueva o recibe un código de restablecimiento por correo.",
+  "sa-pwned-warning-count": "Veces en filtraciones: $1",
+  "sa-current-password": "Contraseña actual",
+  "sa-password-update": "Actualizar contraseña",
+  "sa-password-updated": "Contraseña actualizada.",
+  "sa-password-change-error": "No se pudo actualizar la contraseña. Por favor intenta de nuevo."
 }

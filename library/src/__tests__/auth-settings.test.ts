@@ -23,6 +23,9 @@ const secret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
 function settingsFetch(url: string, init?: RequestInit): Promise<Response> {
   const value = String(url);
   const method = String(init?.method || 'get').toLowerCase();
+  if (value.includes('/password-exposure')) {
+    return Promise.resolve(makeJsonResponse({ state: 'clear', breachCount: '0', checkedAt: '0' }));
+  }
   if (value.includes('/api/v1/users/self')) {
     return Promise.resolve(makeJsonResponse({ email: 'owner@example.com' }));
   }
@@ -212,5 +215,160 @@ describe('<spartan-account-settings> – authenticator app', () => {
     expect(ready.querySelector('.skeleton')).toBeNull();
     expect(ready.textContent).toContain('Phone');
     expect(ready.textContent).toContain('Add authenticator app');
+  });
+});
+
+describe('<spartan-account-settings> – breached passwords', () => {
+  beforeEach(() => {
+    localStorage.setItem('spartan-token', fakeJwt());
+    fetchMock.mockImplementation(settingsFetch);
+  });
+
+  afterEach(() => {
+    document.body.querySelectorAll('spartan-account-settings').forEach((el) => el.remove());
+    fetchMock.mockReset();
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  function withExposure(state: string, breachCount = '0') {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (String(url).includes('/password-exposure')) {
+        return Promise.resolve(makeJsonResponse({ state, breachCount, checkedAt: '1700000000' }));
+      }
+      return settingsFetch(url, init);
+    });
+  }
+
+  async function typePassword(input: HTMLInputElement, value: string) {
+    input.value = value;
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }));
+  }
+
+  it('warns and offers a reset email and a direct password change when the password is pwned', async () => {
+    withExposure('pwned', '42');
+    const el = await mountSettings();
+    const sr = shadow(el);
+    expect(sr.querySelector('.warning')).not.toBeNull();
+    expect(sr.textContent).toContain('known data breach');
+    expect(sr.textContent).toContain('Breach count: 42');
+    expect(sr.textContent).toContain('Email me a reset code');
+    expect(sr.querySelector('#currentPassword')).not.toBeNull();
+    expect(sr.querySelector('#newPassword')).not.toBeNull();
+  });
+
+  it('does not warn for clear, none, unchecked, or unknown passwords', async () => {
+    for (const state of ['clear', 'none', 'unchecked', 'unknown']) {
+      document.body.querySelectorAll('spartan-account-settings').forEach((el) => el.remove());
+      withExposure(state, '0');
+      const el = await mountSettings();
+      const sr = shadow(el);
+      expect(sr.querySelector('.warning'), state).toBeNull();
+      expect(sr.textContent, state).not.toContain('known data breach');
+      expect(sr.querySelector('#currentPassword'), state).not.toBeNull();
+    }
+  });
+
+  it('keeps the rest of settings when the exposure request fails', async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (String(url).includes('/password-exposure')) {
+        return Promise.resolve(makeJsonResponse({}, 500));
+      }
+      return settingsFetch(url, init);
+    });
+    const el = await mountSettings();
+    const sr = shadow(el);
+    expect(sr.querySelector('.warning')).toBeNull();
+    expect(sr.textContent).toContain('Phone');
+    expect(sr.querySelector('#currentPassword')).not.toBeNull();
+  });
+
+  it('emails a reset code to the signed-in address', async () => {
+    withExposure('pwned', '3');
+    const el = await mountSettings();
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (String(url).includes('/api/v1/password/reset/begin')) {
+        return Promise.resolve(makeJsonResponse({ message: 'ok' }));
+      }
+      if (String(url).includes('/password-exposure')) {
+        return Promise.resolve(makeJsonResponse({ state: 'pwned', breachCount: '3', checkedAt: '1' }));
+      }
+      return settingsFetch(url, init);
+    });
+    const button = Array.from(shadow(el).querySelectorAll('button')).find((item) => item.textContent === 'Email me a reset code');
+    button!.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }));
+    await new Promise<void>((r) => setTimeout(r, 40));
+
+    const call = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/v1/password/reset/begin'));
+    expect(call, 'reset begin request').toBeDefined();
+    expect(JSON.parse(String(call![1].body))).toEqual({
+      email: 'owner@example.com',
+      sectorID: 'test-sector-id',
+    });
+    expect(shadow(el).textContent).toContain('If an account exists with that email, a reset code has been sent.');
+    expect(shadow(el).querySelector('.warning')).not.toBeNull();
+  });
+
+  it('posts the current and new password and clears the warning after a successful change', async () => {
+    let state = 'pwned';
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (String(url).includes('/api/v1/users/password')) {
+        state = 'clear';
+        return Promise.resolve(makeJsonResponse({ status: 'ok', message: 'password updated' }));
+      }
+      if (String(url).includes('/password-exposure')) {
+        return Promise.resolve(makeJsonResponse({ state, breachCount: state === 'pwned' ? '4' : '0', checkedAt: '1' }));
+      }
+      return settingsFetch(url, init);
+    });
+    const el = await mountSettings();
+    const sr = shadow(el);
+    await typePassword(sr.querySelector<HTMLInputElement>('#currentPassword')!, 'old-password');
+    await typePassword(sr.querySelector<HTMLInputElement>('#newPassword')!, 'new-password');
+    const button = Array.from(sr.querySelectorAll('button')).find((item) => item.textContent === 'Update password');
+    button!.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }));
+    await new Promise<void>((r) => setTimeout(r, 40));
+
+    const call = fetchMock.mock.calls.find(([url, init]) => {
+      return String(url).includes('/api/v1/users/password') && String(init?.method || '').toLowerCase() === 'post';
+    });
+    expect(call, 'change password request').toBeDefined();
+    expect(JSON.parse(String(call![1].body))).toEqual({
+      currentPassword: 'old-password',
+      newPassword: 'new-password',
+    });
+    expect(String(call![1].headers.Authorization)).toContain('bearer ');
+    const updated = shadow(el);
+    expect(updated.textContent).toContain('Password updated.');
+    expect(updated.querySelector('.warning')).toBeNull();
+    expect(updated.querySelector<HTMLInputElement>('#currentPassword')!.value).toBe('');
+    expect(updated.querySelector<HTMLInputElement>('#newPassword')!.value).toBe('');
+  });
+
+  it('shows the server message when the replacement password is breached or the check is unavailable', async () => {
+    const cases = [
+      { status: 400, message: 'this password has appeared in a data breach' },
+      { status: 503, message: 'password could not be checked against known breaches, try again' },
+      { status: 401, message: 'current password is incorrect' },
+    ];
+    for (const item of cases) {
+      document.body.querySelectorAll('spartan-account-settings').forEach((node) => node.remove());
+      fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+        if (String(url).includes('/api/v1/users/password')) {
+          return Promise.resolve(makeJsonResponse({ message: item.message }, item.status));
+        }
+        return settingsFetch(url, init);
+      });
+      const el = await mountSettings();
+      const sr = shadow(el);
+      await typePassword(sr.querySelector<HTMLInputElement>('#currentPassword')!, 'old-password');
+      await typePassword(sr.querySelector<HTMLInputElement>('#newPassword')!, 'new-password');
+      const button = Array.from(sr.querySelectorAll('button')).find((node) => node.textContent === 'Update password');
+      button!.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }));
+      await new Promise<void>((r) => setTimeout(r, 40));
+      const text = shadow(el).textContent || '';
+      expect(text, item.message).toContain(item.message);
+      expect(text, item.message).not.toContain('Password updated.');
+    }
   });
 });

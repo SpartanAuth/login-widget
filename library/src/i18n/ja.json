@@ -91,5 +91,15 @@
   "sa-confirm-delete-totp": "この認証アプリを削除しますか？",
   "error-totp-remove": "認証アプリの削除中にエラーが発生しました",
   "error-totp-list": "認証アプリの一覧取得中にエラーが発生しました",
-  "sa-totp-last-factor": "最後のログイン方法を削除する前に、管理者が必須の多要素認証をオフにする必要があります。"
+  "sa-totp-last-factor": "最後のログイン方法を削除する前に、管理者が必須の多要素認証をオフにする必要があります。",
+
+  "sa-pwned-login-title": "パスワードを再設定してください",
+  "sa-pwned-login-prompt": "このパスワードは情報漏えいで確認されているため、ログインを一時停止しています。新しいパスワードを選ぶためのコードをメールで送ります。",
+  "sa-pwned-send-reset": "再設定コードをメールで送る",
+  "sa-pwned-warning": "このパスワードは既知の情報漏えいで確認されています。新しいパスワードを設定するか、再設定コードをメールで受け取ってください。",
+  "sa-pwned-warning-count": "漏えい回数: $1",
+  "sa-current-password": "現在のパスワード",
+  "sa-password-update": "パスワードを更新",
+  "sa-password-updated": "パスワードを更新しました。",
+  "sa-password-change-error": "パスワードを更新できませんでした。もう一度お試しください。"
 }
