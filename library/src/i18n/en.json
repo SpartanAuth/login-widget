@@ -125,6 +125,10 @@
   "error-totp-remove": "Error removing authenticator app",
   "error-totp-list": "Error listing authenticator apps",
   "sa-totp-last-factor": "An administrator must turn off required MFA before you can remove your last sign-in method.",
+  "sa-totp-last-factor-own": "Turn off required MFA in account settings before you can remove your last sign-in method.",
+  "sa-require-mfa": "Require a second factor for my sign-ins.",
+  "sa-require-mfa-help": "This applies only to this account. The next time you sign in with a password, you will be asked for one method from the sections below: a passkey, an email code, or an authenticator app.",
+  "sa-require-mfa-error": "Could not update the second-factor setting. Please try again.",
 
   "sa-pwned-login-title": "Reset your password",
   "sa-pwned-login-prompt": "This password has appeared in a data breach, so sign-in is paused. We will email you a code to choose a new password.",

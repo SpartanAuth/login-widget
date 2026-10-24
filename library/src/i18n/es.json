@@ -90,6 +90,10 @@
   "error-totp-remove": "Error al eliminar la aplicación de autenticación",
   "error-totp-list": "Error al listar las aplicaciones de autenticación",
   "sa-totp-last-factor": "Un administrador debe desactivar la autenticación multifactor obligatoria antes de que puedas eliminar tu último método de inicio de sesión.",
+  "sa-totp-last-factor-own": "Desactiva la autenticación multifactor obligatoria en la configuración de la cuenta antes de eliminar tu último método de inicio de sesión.",
+  "sa-require-mfa": "Exigir un segundo factor para mis inicios de sesión.",
+  "sa-require-mfa-help": "Esto se aplica solo a esta cuenta. La próxima vez que inicies sesión con una contraseña, se te pedirá un método de las secciones de abajo: una clave de acceso, un código por correo, o una aplicación de autenticación.",
+  "sa-require-mfa-error": "No se pudo actualizar la configuración del segundo factor. Por favor intenta de nuevo.",
 
   "sa-pwned-login-title": "Restablece tu contraseña",
   "sa-pwned-login-prompt": "Esta contraseña apareció en una filtración de datos, así que el inicio de sesión está en pausa. Te enviaremos un código por correo para elegir una nueva.",
