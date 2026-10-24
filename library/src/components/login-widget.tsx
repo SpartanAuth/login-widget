@@ -146,9 +146,10 @@ const style = `.widget-root {
   }
 
   .login-frame .info-message {
-    color: #666;
+    color: inherit;
     margin: 10px 0;
     font-size: 0.9em;
+    line-height: 1.4;
   }
 
   .login-frame .hint {
