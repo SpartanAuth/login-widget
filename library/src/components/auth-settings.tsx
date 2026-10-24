@@ -76,6 +76,22 @@ const style = `.container {
   .password-form .btn {
     align-self: flex-start;
   }
+
+  .mfa-opt-in {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 14px;
+  }
+
+  .mfa-opt-in input {
+    margin-top: 2px;
+  }
+
+  .hint {
+    font-size: 13px;
+    margin: 8px 0 0;
+  }
   
   .security-keys, .mfa-manage {
     display: flex;
@@ -345,6 +361,9 @@ function flagOptIn(value: unknown): boolean {
   return value === true || value === 'true' || value === '1';
 }
 
+// Phone registration stays wired. Flip this when SMS sending is approved.
+const smsRegistrationEnabled = false;
+
 customElement("spartan-account-settings", defaultProps, (props) => {
   // inputs
   const [username, setUsername] = createSignal("");
@@ -384,6 +403,9 @@ customElement("spartan-account-settings", defaultProps, (props) => {
   const [totpRecoveryCodes, setTotpRecoveryCodes] = createSignal<string[]>([]);
   const skeleton = flagOptIn(props.showSkeleton);
   const [settingsLoading, setSettingsLoading] = createSignal(skeleton && !!getDecodedSpartanToken());
+  const [mfaSettingKnown, setMfaSettingKnown] = createSignal(false);
+  const [mfaEnforcedByPolicy, setMfaEnforcedByPolicy] = createSignal(false);
+  const [mfaOptIn, setMfaOptIn] = createSignal(false);
 
   const banana = setupBanana(props.locale);
 
@@ -427,6 +449,7 @@ customElement("spartan-account-settings", defaultProps, (props) => {
     if (!skeleton) {
       if (isAuthed()) {
         await loadPasswordExposure();
+        await loadOwnMFASetting();
       }
       // get security keys
       await getSecurityKeys();
@@ -451,6 +474,7 @@ customElement("spartan-account-settings", defaultProps, (props) => {
       ];
       if (isAuthed()) {
         loads.push(loadPasswordExposure());
+        loads.push(loadOwnMFASetting());
       }
       if (isAuthed() && flagOn(props.showTotp)) {
         loads.push(listTOTPRegistrations());
@@ -481,6 +505,51 @@ customElement("spartan-account-settings", defaultProps, (props) => {
       setBreachCount(readBreachCount(data.breachCount));
     } catch (e) {
       console.error(e);
+    }
+  }
+
+  async function loadOwnMFASetting() {
+    try {
+      const res = await fetch(`${props.domain}/api/v1/users/self/mfa`, getFetchInit('get'));
+      if (!res.ok) {
+        setErrorMessage(banana.i18n('sa-require-mfa-error'));
+        return;
+      }
+      const data = await res.json();
+      setMfaEnforcedByPolicy(!!data.enforcedByPolicy);
+      setMfaOptIn(!!data.enabled);
+      setMfaSettingKnown(true);
+    } catch (e) {
+      console.error(e);
+      setErrorMessage(banana.i18n('sa-require-mfa-error'));
+    }
+  }
+
+  async function updateOwnMFA(enabled: boolean) {
+    if (isSubmitting() || mfaEnforcedByPolicy()) return;
+    const previous = mfaOptIn();
+    setMfaOptIn(enabled);
+    setIsSubmitting(true);
+    setErrorMessage('');
+    try {
+      const requestInit = getFetchInit('put');
+      requestInit.body = JSON.stringify({enabled});
+      const res = await fetch(`${props.domain}/api/v1/users/self/mfa`, requestInit);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setMfaOptIn(previous);
+        setErrorMessage(data.message || banana.i18n('sa-require-mfa-error'));
+        return;
+      }
+      setMfaEnforcedByPolicy(!!data.enforcedByPolicy);
+      setMfaOptIn(!!data.enabled);
+      setMfaSettingKnown(true);
+    } catch (e) {
+      console.error(e);
+      setMfaOptIn(previous);
+      setErrorMessage(banana.i18n('sa-require-mfa-error'));
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -874,7 +943,19 @@ customElement("spartan-account-settings", defaultProps, (props) => {
       const res = await fetch(`${props.domain}/api/v1/totp/${encodeURIComponent(id)}`, requestInit);
       if (res.status !== 200) {
         if (res.status === 403) {
-          setErrorMessage(banana.i18n('sa-totp-last-factor'));
+          let message = '';
+          try {
+            const data = await res.json();
+            message = String(data?.message || '');
+          } catch (e) {
+            message = '';
+          }
+          // The user's own opt-in names account settings. Platform and sector MFA name an administrator.
+          if (message.toLowerCase().includes('account settings')) {
+            setErrorMessage(banana.i18n('sa-totp-last-factor-own'));
+          } else {
+            setErrorMessage(banana.i18n('sa-totp-last-factor'));
+          }
         } else {
           setErrorMessage(banana.i18n('error-totp-remove'));
         }
@@ -949,6 +1030,18 @@ customElement("spartan-account-settings", defaultProps, (props) => {
           </div>
         </div>
       )}
+      {isAuthed() && mfaSettingKnown() && !mfaEnforcedByPolicy() && (
+        <div class={'section'}>
+          <label class={'mfa-opt-in'}>
+            <input id={'requireMfa'} type={'checkbox'}
+                   checked={mfaOptIn()}
+                   disabled={isSubmitting()}
+                   onChange={(e) => updateOwnMFA(e.currentTarget.checked)}/>
+            {banana.i18n('sa-require-mfa')}
+          </label>
+          <p class={'hint'}>{banana.i18n('sa-require-mfa-help')}</p>
+        </div>
+      )}
       {showWebAuthn() && !!securityKeys().length && (
         <div class={'section'}>
           <h2>{banana.i18n('sa-webauthn-security-keys')}</h2>
@@ -1015,7 +1108,9 @@ customElement("spartan-account-settings", defaultProps, (props) => {
                   <span>{banana.i18n('sa-yes')}</span>
                 ) : <span>
                   {banana.i18n('sa-no')}
-                  &nbsp; <button class={'btn validate'} disabled={isSubmitting()} onClick={() => {initiateMFAValidation(otp.DisplayName, otp.Type === 'email' ? "EMAIL" : "SMS")}}>{banana.i18n('sa-validate')}</button>
+                  <Show when={otp.Type === 'email' || smsRegistrationEnabled}>
+                    &nbsp; <button class={'btn validate'} disabled={isSubmitting()} onClick={() => {initiateMFAValidation(otp.DisplayName, otp.Type === 'email' ? "EMAIL" : "SMS")}}>{banana.i18n('sa-validate')}</button>
+                  </Show>
                   </span>
                 }</td>
                 <td>
@@ -1049,13 +1144,15 @@ customElement("spartan-account-settings", defaultProps, (props) => {
               <button class={'btn add'} disabled={isSubmitting()}
                       onClick={() => initiateMFAValidation(newMFAEmail(), 'EMAIL')}>{banana.i18n('sa-add-email')}</button>
             </div>
-            <div class={'mfa-item'}>
-              <label for={'phone'}>{banana.i18n('sa-phone')}</label>
-              <input id="phone" type={'text'} placeholder={banana.i18n('sa-phone')} value={newMFAPhone()}
-                     onInput={(e) => setNewMFAPhone(e.currentTarget.value)}></input>
-              <button class={'btn add'} disabled={isSubmitting()}
-                      onClick={() => initiateMFAValidation(newMFAPhone(), 'SMS')}>{banana.i18n('sa-add-sms')}</button>
-            </div>
+            <Show when={smsRegistrationEnabled}>
+              <div class={'mfa-item'}>
+                <label for={'phone'}>{banana.i18n('sa-phone')}</label>
+                <input id="phone" type={'text'} placeholder={banana.i18n('sa-phone')} value={newMFAPhone()}
+                       onInput={(e) => setNewMFAPhone(e.currentTarget.value)}></input>
+                <button class={'btn add'} disabled={isSubmitting()}
+                        onClick={() => initiateMFAValidation(newMFAPhone(), 'SMS')}>{banana.i18n('sa-add-sms')}</button>
+              </div>
+            </Show>
             <div class={'mfa-item'}>
               <button class={'btn remove'}
                       onClick={() => setShowAddMFA(false)}>{banana.i18n('sa-cancel')}</button>
@@ -1128,7 +1225,9 @@ customElement("spartan-account-settings", defaultProps, (props) => {
             <span class={"close"} id="closeModal" onClick={() => setShowMFAModal(false)}>&times;</span>
             <h2>MFA Verification</h2>
             {modalErrorMessage() && <span class={'error-message'}>{modalErrorMessage()}</span>}
-            <p>Please enter the verification code sent to your email or phone:</p>
+            <p>{smsRegistrationEnabled
+              ? 'Please enter the verification code sent to your email or phone:'
+              : 'Please enter the verification code sent to your email:'}</p>
             <input type="text" id="mfaCode" placeholder="Enter verification code" value={newOTP()} onInput={(e) => setNewOTP(e.currentTarget.value)}/>
             <button class={"btn verify"} id="verifyMfa" disabled={isSubmitting()} onClick={() => callFinishOTPRegistration(transactionID(), newOTP())}>Verify</button>
           </div>

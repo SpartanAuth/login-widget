@@ -92,6 +92,10 @@
   "error-totp-remove": "Erreur lors du retrait de l'application d'authentification",
   "error-totp-list": "Erreur lors de l'affichage des applications d'authentification",
   "sa-totp-last-factor": "Un administrateur doit désactiver l'authentification multifacteur obligatoire avant que vous puissiez retirer votre dernière méthode de connexion.",
+  "sa-totp-last-factor-own": "Désactivez l'authentification multifacteur obligatoire dans les paramètres du compte avant de retirer votre dernière méthode de connexion.",
+  "sa-require-mfa": "Exiger un second facteur pour mes connexions.",
+  "sa-require-mfa-help": "Cela s'applique uniquement à ce compte. Lors de votre prochaine connexion par mot de passe, un seul moyen parmi les sections ci-dessous vous sera demandé : une clé d'accès, un code par e-mail, ou une application d'authentification.",
+  "sa-require-mfa-error": "Impossible de mettre à jour le réglage du second facteur. Veuillez réessayer.",
 
   "sa-pwned-login-title": "Réinitialisez votre mot de passe",
   "sa-pwned-login-prompt": "Ce mot de passe est apparu dans une fuite de données, la connexion est donc suspendue. Nous vous enverrons un code par e-mail pour en choisir un nouveau.",

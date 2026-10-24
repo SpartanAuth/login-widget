@@ -1,6 +1,6 @@
 {
   "name": "@masonitestudios/spartanauth-widgets",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "",
   "scripts": {
     "build": "vite build",
