@@ -124,5 +124,15 @@
   "sa-confirm-delete-totp": "Remove this authenticator app?",
   "error-totp-remove": "Error removing authenticator app",
   "error-totp-list": "Error listing authenticator apps",
-  "sa-totp-last-factor": "An administrator must turn off required MFA before you can remove your last sign-in method."
+  "sa-totp-last-factor": "An administrator must turn off required MFA before you can remove your last sign-in method.",
+
+  "sa-pwned-login-title": "Reset your password",
+  "sa-pwned-login-prompt": "This password has appeared in a data breach, so sign-in is paused. We will email you a code to choose a new password.",
+  "sa-pwned-send-reset": "Email me a reset code",
+  "sa-pwned-warning": "This password has appeared in a known data breach. Set a new password, or email yourself a reset code.",
+  "sa-pwned-warning-count": "Breach count: $1",
+  "sa-current-password": "Current password",
+  "sa-password-update": "Update password",
+  "sa-password-updated": "Password updated.",
+  "sa-password-change-error": "Could not update the password. Please try again."
 }

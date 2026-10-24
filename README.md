@@ -6,9 +6,9 @@ A collection of drop-in web components for authentication, built with [SolidJS](
 
 | Custom Element | Description |
 |---|---|
-| `<spartan-login>` | Full login form supporting password, WebAuthn (passkeys), email OTP, authenticator-app (TOTP) codes, self-sign-up, and password reset flows |
+| `<spartan-login>` | Full login form supporting password, WebAuthn (passkeys), email OTP, authenticator-app (TOTP) codes, self-sign-up, password reset, and a breached-password reset prompt |
 | `<spartan-invite>` | Invitation completion form — lets invited users set their password using a one-time code |
-| `<spartan-account-settings>` | Authenticated account settings panel for managing passkeys, email MFA, and authenticator apps |
+| `<spartan-account-settings>` | Authenticated account settings panel for passwords, passkeys, email MFA, and authenticator apps |
 
 ## Installation
 
@@ -57,6 +57,8 @@ The library exposes both UMD (`dist/sa-widgets.umd.js`) and ES module (`dist/sa-
 - Authenticator enrollment during sign-in when the sector requires MFA and the user has no second factor yet
 - Self-service sign-up (when enabled on the sector)
 - Password reset via emailed code
+- When a sector requires a reset for a password already known to be breached, sign-in stops on that screen and emails a reset code. The widget does not store a session or continue to another factor
+- Reset, invite, and sign-up show the server's breach and "could not check" messages instead of treating every rejection as a bad code or a generic failure
 - Emits a `spartan-login` CustomEvent on success with `{ token, transactionID }` in `event.detail`
 - Stores the JWT in `localStorage` under `spartan-token`
 
@@ -145,6 +147,7 @@ The widget can also read the OTP code from the URL hash (e.g. `#invite?otp=ABC12
 | `styles` | `""` | Custom CSS injected into the widget's shadow DOM |
 
 **Features:**
+- Change the signed-in password. When that password is in a known breach, the panel shows a warning and can email a reset code
 - List, add, and remove WebAuthn passkeys
 - List, add, validate, and remove MFA registrations (email & SMS OTP)
 - List, add, and remove authenticator apps. Setup shows a QR code and the shared secret once, then the one-time recovery codes the first time the user enrolls

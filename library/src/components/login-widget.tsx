@@ -10,6 +10,7 @@ import {
 } from "@github/webauthn-json/browser-ponyfill";
 import {getDecodedSpartanToken, getSpartanToken} from "./spartanToken";
 import {totpQrSvg} from "./totpQr";
+import {passwordCheckMessage} from "./passwordCheck";
 
 const style = `.widget-root {
   display: block;
@@ -549,6 +550,13 @@ customElement("spartan-login", defaultProps, (props) => {
   }
 
   function routeChallenges(tokens: string[]) {
+    // A breached password does not open a session and must not continue into MFA.
+    if (tokens.indexOf('pwned_password') !== -1) {
+      setPassword('');
+      setErrorMessage('');
+      setMode('pwned-password');
+      return;
+    }
     const second = tokens.filter((token) => token === 'otp' || token === 'totp' || token === 'webauthn');
     const enroll = tokens.filter((token) => token === 'email_enrollment' || token === 'totp_enrollment');
     if (second.length === 1 && second[0] === 'otp') {
@@ -750,6 +758,7 @@ customElement("spartan-login", defaultProps, (props) => {
     if (mode === 'otp-pick') return banana.i18n('sa-otp-send-code');
     if (mode === 'otp' || mode === 'signup-verify') return banana.i18n('sa-otp-verify');
     if (mode === 'reset-email') return banana.i18n('sa-otp-send-code');
+    if (mode === 'pwned-password') return banana.i18n('sa-pwned-send-reset');
     if (mode === 'reset-code') return banana.i18n('sa-reset-submit');
     if (mode === 'totp') return banana.i18n('sa-totp-verify');
     if (mode === 'totp-enroll') return banana.i18n('sa-totp-enroll-verify');
@@ -761,6 +770,7 @@ customElement("spartan-login", defaultProps, (props) => {
   function usernameLocked(): boolean {
     const mode = currMode();
     return mode === 'otp' || mode === 'otp-pick' || mode === 'reset-code'
+      || mode === 'pwned-password'
       || mode === 'signup-verify' || mode === 'signup-webauthn'
       || mode === 'totp' || mode === 'totp-enroll' || mode === 'totp-recovery'
       || mode === 'mfa-pick' || mode === 'enroll-pick';
@@ -768,6 +778,7 @@ customElement("spartan-login", defaultProps, (props) => {
 
   function heading(): string {
     const mode = currMode();
+    if (mode === 'pwned-password') return banana.i18n('sa-pwned-login-title');
     if (mode === 'reset-email' || mode === 'reset-code') return banana.i18n('sa-reset-password');
     if (mode === 'signup-verify' || mode === 'signup-webauthn') return banana.i18n('sa-signup-mfa-title');
     if (mode === 'invite') return banana.i18n('sa-complete-invite');
@@ -797,7 +808,7 @@ customElement("spartan-login", defaultProps, (props) => {
       return Promise.resolve();
     } else if (currMode() === 'mfa-pick' || currMode() === 'enroll-pick') {
       return continueSelectedChallenge();
-    } else if (currMode() === 'reset-email') {
+    } else if (currMode() === 'pwned-password' || currMode() === 'reset-email') {
       return beginPasswordReset();
     } else if (currMode() === 'reset-code') {
       return completePasswordReset();
@@ -820,12 +831,12 @@ customElement("spartan-login", defaultProps, (props) => {
         password: password(),
         sectorID: props.sector,
       })
-    }).then(response => {
+    }).then(async (response) => {
       if (response.ok) {
         return response.json();
-      } else {
-        throw new Error(banana.i18n('sa-error-creating-user'));
       }
+      const data = await response.json().catch(() => ({} as { message?: string }));
+      throw new Error(passwordCheckMessage(data.message) || banana.i18n('sa-error-creating-user'));
     }).then(data => {
       console.log(data);
       if (mfaRequired()) {
@@ -1077,15 +1088,19 @@ customElement("spartan-login", defaultProps, (props) => {
         newPassword: newPassword(),
         sectorID: props.sector,
       })
-    }).then(response => {
+    }).then(async (response) => {
       if (response.ok) {
         return response.json();
-      } else {
-        if (response.status === 400) {
-          throw new Error(banana.i18n('sa-reset-error-code'));
-        }
-        throw new Error(banana.i18n('sa-reset-error'));
       }
+      const data = await response.json().catch(() => ({} as { message?: string }));
+      const checked = passwordCheckMessage(data.message);
+      if (checked) {
+        throw new Error(checked);
+      }
+      if (response.status === 400) {
+        throw new Error(banana.i18n('sa-reset-error-code'));
+      }
+      throw new Error(banana.i18n('sa-reset-error'));
     }).then(data => {
       console.log(data);
       setResetComplete(true);
@@ -1189,7 +1204,10 @@ customElement("spartan-login", defaultProps, (props) => {
       }
     } else {
       const errorData = await response.json().catch(() => ({}));
-      if (response.status === 400 || String(errorData.message).includes('invalid OTP')) {
+      const checked = passwordCheckMessage(errorData.message);
+      if (checked) {
+        setErrorMessage(checked);
+      } else if (response.status === 400 || String(errorData.message).includes('invalid OTP')) {
         setErrorMessage(banana.i18n('sa-invite-error-otp'));
       } else if (response.status === 504 || String(errorData.message).includes('expired')) {
         setErrorMessage(banana.i18n('sa-invite-error-expired'));
@@ -1274,6 +1292,9 @@ customElement("spartan-login", defaultProps, (props) => {
                        onChange={(e) => setPassword(e.currentTarget.value)}
                        autocomplete="current-password"
                 ></input>
+              )}
+              {currMode() === "pwned-password" && (
+                <p class="info-message">{banana.i18n('sa-pwned-login-prompt')}</p>
               )}
               {currMode() === "webauthn" && (
                 <span></span>
@@ -1439,7 +1460,7 @@ customElement("spartan-login", defaultProps, (props) => {
           {currMode() === "password" && (
             <a class={'centered-text'} href="#" onClick={() => { setErrorMessage(''); setResetComplete(false); setMode('reset-email'); }}>{banana.i18n('sa-forgot-password')}</a>
           )}
-          {(currMode() === "reset-email" || currMode() === "reset-code") && (
+          {(currMode() === "reset-email" || currMode() === "reset-code" || currMode() === "pwned-password") && (
             <a class={'centered-text'} href="#" onClick={() => { setErrorMessage(''); setResetCode(''); setNewPassword(''); setMode(props.startMode); }}>{banana.i18n('sa-back')}</a>
           )}
           {(currMode() === "totp" || currMode() === "otp" || currMode() === "otp-pick") && availableChallenges().length > 1 && (
@@ -1449,6 +1470,7 @@ customElement("spartan-login", defaultProps, (props) => {
             <a class={'centered-text totp-cancel'} href="#" onClick={(e) => { e.preventDefault(); cancelTOTPEnrollment(); }}>{banana.i18n('sa-cancel')}</a>
           )}
           {selfSignUpAllowed() && currMode() !== "reset-email" && currMode() !== "reset-code"
+            && currMode() !== "pwned-password"
             && currMode() !== "signup-verify" && currMode() !== "signup-webauthn"
             && currMode() !== "totp" && currMode() !== "totp-enroll" && currMode() !== "totp-recovery"
             && currMode() !== "mfa-pick" && currMode() !== "enroll-pick" && (

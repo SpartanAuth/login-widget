@@ -37,6 +37,45 @@ const style = `.container {
   .error-message {
     color: red;
   }
+
+  .success-message {
+    color: green;
+    display: block;
+    margin-bottom: 10px;
+  }
+
+  .warning {
+    background: #fff6e8;
+    border: 1px solid #e6b450;
+    color: #6a4b00;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+  }
+
+  .warning p {
+    margin: 0 0 8px 0;
+  }
+
+  .password-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .password-form label {
+    font-size: 14px;
+  }
+
+  .password-form input {
+    padding: 8px;
+    box-sizing: border-box;
+    width: 100%;
+  }
+
+  .password-form .btn {
+    align-self: flex-start;
+  }
   
   .security-keys, .mfa-manage {
     display: flex;
@@ -310,6 +349,10 @@ customElement("spartan-account-settings", defaultProps, (props) => {
   // inputs
   const [username, setUsername] = createSignal("");
   const [password, setPassword] = createSignal("");
+  const [newPassword, setNewPassword] = createSignal("");
+  const [exposureState, setExposureState] = createSignal("");
+  const [breachCount, setBreachCount] = createSignal(0);
+  const [passwordNotice, setPasswordNotice] = createSignal("");
   const [newKeyName, setNewKeyName] = createSignal("");
 
   // widget state
@@ -382,6 +425,9 @@ customElement("spartan-account-settings", defaultProps, (props) => {
     }
 
     if (!skeleton) {
+      if (isAuthed()) {
+        await loadPasswordExposure();
+      }
       // get security keys
       await getSecurityKeys();
 
@@ -403,6 +449,9 @@ customElement("spartan-account-settings", defaultProps, (props) => {
           setOTPRegistrations(data?.registrations || []);
         }),
       ];
+      if (isAuthed()) {
+        loads.push(loadPasswordExposure());
+      }
       if (isAuthed() && flagOn(props.showTotp)) {
         loads.push(listTOTPRegistrations());
       }
@@ -415,6 +464,83 @@ customElement("spartan-account-settings", defaultProps, (props) => {
   async function getProfile() {
     const res = await fetch(`${props.domain}/api/v1/users/self`, getFetchInit('get'));
     return await res.json();
+  }
+
+  function readBreachCount(value: unknown): number {
+    const count = typeof value === 'string' || typeof value === 'number' ? Number(value) : 0;
+    if (!Number.isFinite(count) || count <= 0) return 0;
+    return count;
+  }
+
+  async function loadPasswordExposure() {
+    try {
+      const res = await fetch(`${props.domain}/api/v1/users/self/password-exposure`, getFetchInit('get'));
+      if (!res.ok) return;
+      const data = await res.json();
+      setExposureState(String(data.state || '').trim().toLowerCase());
+      setBreachCount(readBreachCount(data.breachCount));
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function sendPasswordReset() {
+    if (isSubmitting() || username() === '') return;
+    setIsSubmitting(true);
+    setErrorMessage('');
+    setPasswordNotice('');
+    try {
+      const res = await fetch(`${props.domain}/api/v1/password/reset/begin`, {
+        method: 'POST',
+        mode: 'cors',
+        cache: 'no-cache',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: username(),
+          sectorID: props.sector,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({} as { message?: string }));
+        setErrorMessage(data.message || banana.i18n('sa-reset-error'));
+        return;
+      }
+      setPasswordNotice(banana.i18n('sa-reset-email-sent'));
+    } catch (e) {
+      console.error(e);
+      setErrorMessage(banana.i18n('sa-reset-error'));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function changePassword() {
+    if (isSubmitting()) return;
+    setIsSubmitting(true);
+    setErrorMessage('');
+    setPasswordNotice('');
+    try {
+      const requestInit = getFetchInit('post');
+      requestInit.body = JSON.stringify({
+        currentPassword: password(),
+        newPassword: newPassword(),
+      });
+      const res = await fetch(`${props.domain}/api/v1/users/password`, requestInit);
+      const data = await res.json().catch(() => ({} as { message?: string }));
+      if (!res.ok) {
+        setErrorMessage(data.message || banana.i18n('sa-password-change-error'));
+        return;
+      }
+      setPassword('');
+      setNewPassword('');
+      setPasswordNotice(banana.i18n('sa-password-updated'));
+      await loadPasswordExposure();
+    } catch (e) {
+      console.error(e);
+      setErrorMessage(banana.i18n('sa-password-change-error'));
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function getFetchInit(method='get'): RequestInit {
@@ -793,7 +919,36 @@ customElement("spartan-account-settings", defaultProps, (props) => {
           )}
         </div>
       }>
-      {/*TODO: add update password section*/}
+      {isAuthed() && (
+        <div class={'section'}>
+          <h2>{banana.i18n('sa-password')}</h2>
+          <Show when={exposureState() === 'pwned'}>
+            <div class={'warning'} role="status">
+              <p>{banana.i18n('sa-pwned-warning')}</p>
+              <Show when={breachCount() > 0}>
+                <p>{banana.i18n('sa-pwned-warning-count', breachCount())}</p>
+              </Show>
+              <button type="button" class={'btn add'}
+                      disabled={isSubmitting() || username() === ''}
+                      onClick={() => sendPasswordReset()}>{banana.i18n('sa-pwned-send-reset')}</button>
+            </div>
+          </Show>
+          {passwordNotice() && <span class={'success-message'}>{passwordNotice()}</span>}
+          <div class={'password-form'}>
+            <label for={'currentPassword'}>{banana.i18n('sa-current-password')}</label>
+            <input id={'currentPassword'} type={'password'} autocomplete={'current-password'}
+                   value={password()}
+                   onInput={(e) => setPassword(e.currentTarget.value)}/>
+            <label for={'newPassword'}>{banana.i18n('sa-new-password')}</label>
+            <input id={'newPassword'} type={'password'} autocomplete={'new-password'}
+                   value={newPassword()}
+                   onInput={(e) => setNewPassword(e.currentTarget.value)}/>
+            <button type="button" class={'btn add'}
+                    disabled={isSubmitting()}
+                    onClick={() => changePassword()}>{banana.i18n('sa-password-update')}</button>
+          </div>
+        </div>
+      )}
       {showWebAuthn() && !!securityKeys().length && (
         <div class={'section'}>
           <h2>{banana.i18n('sa-webauthn-security-keys')}</h2>

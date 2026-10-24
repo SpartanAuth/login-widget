@@ -752,3 +752,197 @@ describe('<spartan-login> – authenticator app (TOTP)', () => {
     expect(JSON.parse(String(createCall[1].body)).username).toBe('new@example.com');
   });
 });
+
+describe('<spartan-login> – breached passwords', () => {
+  let el: HTMLElement;
+
+  beforeEach(() => {
+    localStorage.clear();
+    fetchMock.mockImplementation(defaultFetch);
+    window.history.pushState({}, '', '/');
+  });
+
+  afterEach(() => {
+    if (el?.isConnected) document.body.removeChild(el);
+    fetchMock.mockReset();
+    localStorage.clear();
+    window.history.pushState({}, '', '/');
+  });
+
+  function callsTo(fragment: string) {
+    return fetchMock.mock.calls.filter(([url]) => String(url).includes(fragment));
+  }
+
+  async function submitPassword(challenge: Record<string, unknown>) {
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/api/v1/login/password')) {
+        return Promise.resolve(makeJsonResponse(challenge));
+      }
+      return defaultFetch(String(url));
+    });
+    const sr = shadow(el);
+    userTyping(sr.querySelector<HTMLInputElement>('input[type="text"]')!, 'user@example.com');
+    userTyping(sr.querySelector<HTMLInputElement>('input[type="password"]')!, 'secret');
+    sr.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+    return shadow(el);
+  }
+
+  it('stops sign-in and emails a reset code without storing a session or opening MFA', async () => {
+    el = await mountWidget();
+    const events: Event[] = [];
+    el.addEventListener('spartan-login', (event) => events.push(event));
+    const sr = await submitPassword({
+      transactionID: 'tx-pwned',
+      challengeType: 'pwned_password,totp',
+      status: 'FORBIDDEN',
+    });
+
+    expect(localStorage.getItem('spartan-token')).toBeNull();
+    expect(events).toHaveLength(0);
+    expect(sr.querySelector('h1')!.textContent).toBe('Reset your password');
+    expect(sr.textContent).toContain('sign-in is paused');
+    expect(sr.querySelector('input[type="password"]')).toBeNull();
+    expect(sr.querySelector('input.totp-code')).toBeNull();
+    expect(sr.querySelector<HTMLInputElement>('input[type="text"]')!.disabled).toBe(true);
+    expect(callsTo('/api/v1/login/totp').length).toBe(0);
+    expect(callsTo('/api/v1/login/otp').length).toBe(0);
+    expect(callsTo('/api/v1/otp/').length).toBe(0);
+
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/api/v1/password/reset/begin')) {
+        return Promise.resolve(makeJsonResponse({ message: 'ok' }));
+      }
+      return defaultFetch(String(url));
+    });
+    sr.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+
+    const call = callsTo('/api/v1/password/reset/begin')[0];
+    expect(call, 'reset begin request').toBeDefined();
+    expect(JSON.parse(String(call[1].body))).toEqual({
+      email: 'user@example.com',
+      sectorID: 'test-sector-id',
+    });
+    const reset = shadow(el);
+    expect(reset.textContent).toContain('If an account exists with that email, a reset code has been sent.');
+    expect(reset.querySelector('input[placeholder="Reset Code"]')).not.toBeNull();
+    expect(localStorage.getItem('spartan-token')).toBeNull();
+  });
+
+  it('shows a breached or unchecked replacement on reset instead of calling the code invalid', async () => {
+    el = await mountWidget();
+    await submitPassword({ transactionID: 'tx-pwned', challengeType: 'pwned_password', status: 'FORBIDDEN' });
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/api/v1/password/reset/begin')) {
+        return Promise.resolve(makeJsonResponse({ message: 'ok' }));
+      }
+      return defaultFetch(String(url));
+    });
+    shadow(el).querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+
+    const cases = [
+      { status: 400, message: 'this password has appeared in a data breach' },
+      { status: 503, message: 'password could not be checked against known breaches, try again' },
+    ];
+    for (const item of cases) {
+      fetchMock.mockImplementation((url: string) => {
+        if (String(url).includes('/api/v1/password/reset/complete')) {
+          return Promise.resolve(makeJsonResponse({ message: item.message }, item.status));
+        }
+        return defaultFetch(String(url));
+      });
+      const sr = shadow(el);
+      userTyping(sr.querySelector<HTMLInputElement>('input[placeholder="Reset Code"]')!, 'abc123');
+      userTyping(sr.querySelector<HTMLInputElement>('input[autocomplete="new-password"]')!, 'replacement');
+      sr.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+      await new Promise<void>((r) => setTimeout(r, 40));
+      const text = shadow(el).textContent || '';
+      expect(text, item.message).toContain(item.message);
+      expect(text, item.message).not.toContain('Invalid or expired reset code');
+      expect(shadow(el).querySelector('input[placeholder="Reset Code"]'), item.message).not.toBeNull();
+    }
+  });
+
+  it('keeps the localized invalid-code message for a bad reset code', async () => {
+    el = await mountWidget();
+    await submitPassword({ transactionID: 'tx-pwned', challengeType: 'pwned_password', status: 'FORBIDDEN' });
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/api/v1/password/reset/begin')) {
+        return Promise.resolve(makeJsonResponse({ message: 'ok' }));
+      }
+      if (String(url).includes('/api/v1/password/reset/complete')) {
+        return Promise.resolve(makeJsonResponse({ message: 'invalid OTP' }, 400));
+      }
+      return defaultFetch(String(url));
+    });
+    shadow(el).querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+    const sr = shadow(el);
+    userTyping(sr.querySelector<HTMLInputElement>('input[placeholder="Reset Code"]')!, 'nope');
+    userTyping(sr.querySelector<HTMLInputElement>('input[autocomplete="new-password"]')!, 'replacement');
+    sr.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+    expect(shadow(el).textContent).toContain('Invalid or expired reset code');
+  });
+
+  it('shows a breached password chosen during an invite instead of an invalid code', async () => {
+    window.history.pushState({}, '', '/?sub=user-1&email=invited@example.com');
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/api/v1/users/invite/complete')) {
+        return Promise.resolve(makeJsonResponse({ message: 'this password has appeared in a data breach' }, 400));
+      }
+      return defaultFetch(String(url));
+    });
+    el = await mountWidget();
+    const sr = shadow(el);
+    userTyping(sr.querySelector<HTMLInputElement>('input[autocomplete="one-time-code"]')!, 'abc123');
+    userTyping(sr.querySelector<HTMLInputElement>('input[autocomplete="new-password"]')!, 'replacement');
+    sr.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+    const text = shadow(el).textContent || '';
+    expect(text).toContain('this password has appeared in a data breach');
+    expect(text).not.toContain('Invalid or expired verification code');
+    expect(localStorage.getItem('spartan-token')).toBeNull();
+  });
+
+  it('shows a breached password chosen during sign-up', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('publicsettings')) {
+        return Promise.resolve(makeJsonResponse({ SelfSignUpAllowed: true, MFARequired: false }));
+      }
+      if (String(url).endsWith('/api/v1/users')) {
+        return Promise.resolve(makeJsonResponse({ message: 'password could not be checked against known breaches, try again' }, 503));
+      }
+      return defaultFetch(String(url));
+    });
+    el = await mountWidget();
+    const signupLink = Array.from(shadow(el).querySelectorAll<HTMLAnchorElement>('a.centered-text')).at(-1)!;
+    signupLink.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }));
+    await new Promise<void>((r) => setTimeout(r, 20));
+    userTyping(shadow(el).querySelector<HTMLInputElement>('input[type="text"]')!, 'new@example.com');
+    userTyping(shadow(el).querySelector<HTMLInputElement>('input[type="password"]')!, 'secretsecret');
+    shadow(el).querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+    const text = shadow(el).textContent || '';
+    expect(text).toContain('password could not be checked against known breaches, try again');
+    expect(text).not.toContain('Error creating user.');
+  });
+});
