@@ -433,6 +433,107 @@ describe('<spartan-login> – OAuth callback loading hold', () => {
     document.body.removeChild(el);
   });
 
+  it('keeps the password prompt hidden until the social MFA prompt is ready', async () => {
+    history.replaceState({}, '', `${window.location.pathname}?code=mfa-hold`);
+    let releaseExchange: (response: Response) => void = () => {};
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/api/v1/oauth/exchange')) {
+        return new Promise<Response>((resolve) => {
+          releaseExchange = resolve;
+        });
+      }
+      return defaultFetch(url);
+    });
+
+    const el = document.createElement('spartan-login') as HTMLElement;
+    el.setAttribute('domain', 'http://localhost:11000');
+    el.setAttribute('sector', 'test-sector-id');
+    document.body.appendChild(el);
+
+    const covered = () => shadow(el).querySelector('.login-frame.is-covered');
+    const overlay = () => shadow(el).querySelector('.loading-overlay');
+    const passwordField = () => shadow(el).querySelector('input[autocomplete="current-password"]');
+
+    await new Promise<void>((r) => setTimeout(r, 0));
+    expect(overlay(), 'provider return should cover the widget before the exchange resolves').not.toBeNull();
+    expect(covered(), 'password form should stay hidden while the exchange is in flight').not.toBeNull();
+    expect(passwordField(), 'password field must stay under the cover during the exchange').not.toBeNull();
+    expect((covered() as HTMLElement).contains(passwordField() as Node)).toBe(true);
+
+    releaseExchange(makeJsonResponse({
+      mfaRequired: true,
+      status: 'FORBIDDEN',
+      transactionID: 'tx-oauth-hold',
+      challengeType: 'totp',
+      email: 'ada@example.com',
+    }));
+    await new Promise<void>((r) => setTimeout(r, 20));
+
+    expect(overlay(), 'overlay should clear once the authenticator prompt is ready').toBeNull();
+    expect(covered(), 'authenticator prompt should be the visible form').toBeNull();
+    expect(shadow(el).querySelector('h1')?.textContent).toBe('Authenticator app');
+    expect(shadow(el).querySelector('input[autocomplete="current-password"]')).toBeNull();
+
+    document.body.removeChild(el);
+  });
+
+  it('shows the authenticator prompt when social login returns FORBIDDEN', async () => {
+    history.replaceState({}, '', `${window.location.pathname}?code=mfa-code`);
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/api/v1/oauth/exchange')) {
+        return Promise.resolve(makeJsonResponse({
+          mfaRequired: true,
+          status: 'FORBIDDEN',
+          transactionID: 'tx-oauth-mfa',
+          challengeType: 'totp',
+          email: 'ada@example.com',
+        }));
+      }
+      return defaultFetch(url);
+    });
+
+    const events: CustomEvent[] = [];
+    const listener = (e: Event) => events.push(e as CustomEvent);
+    document.addEventListener('spartan-login', listener);
+    const el = await mountWidget();
+    document.removeEventListener('spartan-login', listener);
+
+    const sr = shadow(el);
+    expect(events.length, 'social MFA must not fire login before the second factor').toBe(0);
+    expect(sr.querySelector('.loading-overlay'), 'loading overlay should clear').toBeNull();
+    expect(sr.querySelector('h1')?.textContent).toBe('Authenticator app');
+    const username = sr.querySelector<HTMLInputElement>('input[name="username"], input[autocomplete="username"]');
+    expect(username?.value).toBe('ada@example.com');
+    expect(localStorage.getItem('spartan-txid')).toBe('tx-oauth-mfa');
+
+    document.body.removeChild(el);
+  });
+
+  it('shows the method picker when social login offers more than one second factor', async () => {
+    history.replaceState({}, '', `${window.location.pathname}?code=mfa-pick-code`);
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('/api/v1/oauth/exchange')) {
+        return Promise.resolve(makeJsonResponse({
+          mfaRequired: true,
+          status: 'FORBIDDEN',
+          transactionID: 'tx-oauth-pick',
+          challengeType: 'otp,totp',
+          email: 'ada@example.com',
+        }));
+      }
+      return defaultFetch(url);
+    });
+
+    localStorage.removeItem('spartan-token');
+    const el = await mountWidget();
+    const sr = shadow(el);
+    const values = Array.from(sr.querySelectorAll('select.mfa-choice option')).map((option) => (option as HTMLOptionElement).value);
+    expect(values).toEqual(['otp', 'totp']);
+    expect(localStorage.getItem('spartan-token')).toBeNull();
+
+    document.body.removeChild(el);
+  });
+
   it('fires the spartan-login event with the exchanged token', async () => {
     const events: CustomEvent[] = [];
     const listener = (e: Event) => events.push(e as CustomEvent);

@@ -35,10 +35,12 @@ const style = `.widget-root {
     display: flex;
     align-items: center;
     justify-content: center;
-    background-color: rgba(255, 255, 255, 0.72);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    background-color: rgba(255, 255, 255, 0.95);
     z-index: 10;
+  }
+
+  .login-frame.is-covered {
+    visibility: hidden;
   }
 
 
@@ -199,6 +201,12 @@ const defaultProps = {
   hideSocial: false,
 };
 
+function oauthReturnPending(): boolean {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.has('code') || params.has('error');
+}
+
 customElement("spartan-login", defaultProps, (props) => {
   const [currMode, setMode] = createSignal((props.startMode || 'password').toLowerCase());
   const [username, setUsername] = createSignal("");
@@ -215,7 +223,9 @@ customElement("spartan-login", defaultProps, (props) => {
   const [selectedRegistrationID, setSelectedRegistrationID] = createSignal("");
   const [socialProviders, setSocialProviders] = createSignal<Array<{provider: string, enabled: boolean, clientID: string}>>([]);
   const [socialLoading, setSocialLoading] = createSignal("");
-  const [isSubmitting, setIsSubmitting] = createSignal(false);
+  // A provider return (?code= or ?error=) must not paint the password form
+  // before onMount can show the loading overlay.
+  const [isSubmitting, setIsSubmitting] = createSignal(oauthReturnPending());
   const [mfaRequired, setMfaRequired] = createSignal(false);
   const [signupToken, setSignupToken] = createSignal("");
   const [enrollmentTransactionId, setEnrollmentTransactionId] = createSignal("");
@@ -282,6 +292,29 @@ customElement("spartan-login", defaultProps, (props) => {
         });
         if (!resp.ok) throw new Error(banana.i18n('sa-social-error'));
         const data = await resp.json();
+        // Social login with MFA enforced returns 200 and status FORBIDDEN.
+        // There is no token until the user finishes the second factor.
+        if (data.mfaRequired || data.status === 'FORBIDDEN' || (data.challengeType && !data.token)) {
+          if (oauthCallbackTimeoutRef) {
+            clearTimeout(oauthCallbackTimeoutRef);
+            oauthCallbackTimeoutRef = null;
+          }
+          if (data.email) setUsername(data.email);
+          if (data.transactionID) {
+            localStorage.setItem('spartan-txid', data.transactionID);
+            setEnrollmentTransactionId(data.transactionID);
+          }
+          // Switch to the second-factor prompt before the overlay comes down.
+          // Sector settings can load underneath; they must not reveal password.
+          const routed = routeChallenges(challengeTokens(data.challengeType || ''));
+          Promise.resolve(routed).finally(() => {
+            setIsSubmitting(false);
+            getSectorSettings();
+            getSocialProviders();
+          });
+          return;
+        }
+        if (!data.token) throw new Error(banana.i18n('sa-social-error'));
         localStorage.setItem('spartan-token', data.token);
         const hostEl = (hostRef.getRootNode() as ShadowRoot).host;
         if (props.redirect !== '') {
@@ -561,6 +594,10 @@ customElement("spartan-login", defaultProps, (props) => {
     const second = tokens.filter((token) => token === 'otp' || token === 'totp' || token === 'webauthn');
     const enroll = tokens.filter((token) => token === 'email_enrollment' || token === 'totp_enrollment');
     if (second.length === 1 && second[0] === 'otp') {
+      // Leave password before the registration list returns, so the overlay
+      // never drops onto the username and password prompt.
+      setErrorMessage('');
+      setMode('otp-pick');
       return listOTPRegistrations();
     }
     if (second.length === 1 && second[0] === 'totp') {
@@ -583,10 +620,14 @@ customElement("spartan-login", defaultProps, (props) => {
       return;
     }
     if (enroll.length === 1 && enroll[0] === 'email_enrollment') {
+      setErrorMessage('');
+      setMode('signup-verify');
       return beginSignupMFA(username(), enrollmentTransactionId() || localStorage.getItem('spartan-txid') || '');
     }
     if (enroll.length === 1 && enroll[0] === 'totp_enrollment') {
       setAvailableChallenges(enroll);
+      setErrorMessage('');
+      setMode('totp-enroll');
       return beginTOTPEnrollment();
     }
     if (enroll.length > 1) {
@@ -1220,7 +1261,7 @@ customElement("spartan-login", defaultProps, (props) => {
 
   return (
     <div class="widget-root">
-    <form class={'login-frame'} onSubmit={(e) => {
+    <form class={'login-frame'} classList={{ 'is-covered': isLoading() }} onSubmit={(e) => {
       e.preventDefault();
       if (isSubmitting()) return;
       setIsSubmitting(true);
