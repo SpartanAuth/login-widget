@@ -105,5 +105,18 @@
   "sa-current-password": "Mot de passe actuel",
   "sa-password-update": "Mettre à jour le mot de passe",
   "sa-password-updated": "Mot de passe mis à jour.",
-  "sa-password-change-error": "Impossible de mettre à jour le mot de passe. Veuillez réessayer."
+  "sa-password-change-error": "Impossible de mettre à jour le mot de passe. Veuillez réessayer.",
+
+  "sa-stepup-title": "Confirmez que c'est bien vous",
+  "sa-stepup-prompt": "Ajouter ou retirer une clé d'accès exige un code e-mail ou d'authentification récent.",
+  "sa-stepup-email": "Envoyer un code par e-mail",
+  "sa-stepup-totp": "Application d'authentification",
+  "sa-stepup-code": "Code de vérification",
+  "sa-stepup-send": "Envoyer le code",
+  "sa-stepup-verify": "Vérifier",
+  "sa-stepup-sent": "Code envoyé. Saisissez-le pour continuer.",
+  "sa-stepup-error": "Ce code n'a pas pu être vérifié.",
+  "sa-stepup-required": "Confirmez que c'est bien vous avec un code e-mail ou l'application d'authentification avant de modifier les clés d'accès.",
+  "sa-stepup-none": "Ajoutez un code e-mail ou une application d'authentification avant de modifier les clés d'accès.",
+  "error-webauthn-register": "Impossible d'enregistrer la clé d'accès."
 }

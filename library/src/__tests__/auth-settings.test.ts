@@ -1,5 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+vi.mock('@github/webauthn-json/browser-ponyfill', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('@github/webauthn-json/browser-ponyfill');
+  return {
+    ...actual,
+    create: vi.fn(async () => ({
+      id: 'cred',
+      type: 'public-key',
+      toJSON() {
+        return {
+          id: 'cred',
+          type: 'public-key',
+          response: { clientDataJSON: 'abc', attestationObject: 'def' },
+        };
+      },
+    })),
+    parseCreationOptionsFromJSON: vi.fn((options: unknown) => options),
+  };
+});
+
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
 
@@ -13,9 +32,9 @@ function makeJsonResponse(body: unknown, status = 200): Response {
   } as unknown as Response;
 }
 
-function fakeJwt(): string {
+function fakeJwt(claims: { iat?: number } = {}): string {
   const enc = (obj: object) => btoa(JSON.stringify(obj)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-  return `${enc({ alg: 'none', typ: 'JWT' })}.${enc({ exp: 4_000_000_000 })}.sig`;
+  return `${enc({ alg: 'none', typ: 'JWT' })}.${enc({ exp: 4_000_000_000, ...claims })}.sig`;
 }
 
 const secret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
@@ -523,5 +542,509 @@ describe('<spartan-account-settings> – own MFA requirement', () => {
     const text = shadow(el).textContent || '';
     expect(text).toContain('Turn off required MFA in account settings before you can remove your last sign-in method.');
     expect(text).not.toContain('An administrator must turn off required MFA');
+  });
+});
+
+function requestPath(url: unknown): string {
+  const value = String(url);
+  try {
+    return new URL(value).pathname;
+  } catch {
+    return value;
+  }
+}
+
+function beginOk(transactionID = 'tx-begin') {
+  return makeJsonResponse({
+    Options: { publicKey: { challenge: 'abc' } },
+    TransactionID: transactionID,
+    SectorID: 'test-sector-id',
+  });
+}
+
+function clickButton(root: ParentNode, label: string) {
+  const button = Array.from(root.querySelectorAll('button')).find((item) => (item.textContent || '').trim() === label);
+  expect(button, `button ${label}`).toBeDefined();
+  button!.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }));
+}
+
+async function registerPasskey(el: HTMLElement, name: string) {
+  clickButton(shadow(el), '+ Add passkey');
+  await new Promise<void>((r) => setTimeout(r, 20));
+  const input = shadow(el).querySelector<HTMLInputElement>('#keyName');
+  expect(input, 'key name').not.toBeNull();
+  input!.value = name;
+  input!.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }));
+  clickButton(shadow(el), 'Register');
+  await new Promise<void>((r) => setTimeout(r, 40));
+}
+
+async function submitStepUpCode(el: HTMLElement, code: string) {
+  const input = shadow(el).querySelector<HTMLInputElement>('#stepUpCode');
+  expect(input, 'step-up code').not.toBeNull();
+  input!.value = code;
+  input!.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true }));
+  clickButton(shadow(el), 'Verify');
+  await new Promise<void>((r) => setTimeout(r, 40));
+}
+
+describe('<spartan-account-settings> – passkey step-up', () => {
+  beforeEach(() => {
+    localStorage.setItem('spartan-token', fakeJwt());
+    fetchMock.mockImplementation(settingsFetch);
+  });
+
+  afterEach(() => {
+    document.body.querySelectorAll('spartan-account-settings').forEach((el) => el.remove());
+    fetchMock.mockReset();
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('shows the step-up UI when adding a passkey returns mfa_step_up_required', async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (requestPath(url) === '/api/v1/webauthn/registration/begin') {
+        return Promise.resolve(makeJsonResponse({ error: 'mfa_step_up_required' }, 403));
+      }
+      return settingsFetch(url, init);
+    });
+    const el = await mountSettings();
+    await registerPasskey(el, 'laptop');
+
+    const sr = shadow(el);
+    expect(sr.querySelector('#stepUpModal')).not.toBeNull();
+    expect(sr.textContent).toContain("Confirm it's you");
+    expect(sr.textContent).toContain('Adding or removing a passkey needs a recent email code or authenticator code.');
+    expect(sr.textContent).not.toContain('mfa_step_up_required');
+    expect(sr.textContent).not.toContain('[object');
+    expect(sr.querySelector('#stepUpCode')).not.toBeNull();
+    const errors = Array.from(sr.querySelectorAll('.error-message'));
+    expect(errors.every((node) => (node.textContent || '').trim().length > 0)).toBe(true);
+    expect(fetchMock.mock.calls.filter(([url]) => requestPath(url) === '/api/v1/webauthn/registration/begin')).toHaveLength(1);
+  });
+
+  it('verifies an authenticator code without replacing the session token, then retries registration', async () => {
+    const original = localStorage.getItem('spartan-token');
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const path = requestPath(url);
+      if (path === '/api/v1/login/totp') {
+        return Promise.resolve(makeJsonResponse({
+          transactionID: 'tx-step',
+          status: 'SUCCESS',
+          challengeType: 'totp',
+          token: 'should-not-replace-session',
+        }));
+      }
+      if (path === '/api/v1/webauthn/registration/begin') {
+        const body = JSON.parse(String(init?.body || '{}'));
+        if (!body.transactionID) {
+          return Promise.resolve(makeJsonResponse({ error: 'mfa_step_up_required' }, 403));
+        }
+        return Promise.resolve(beginOk(body.transactionID));
+      }
+      if (path === '/api/v1/webauthn/registration/finish') {
+        return Promise.resolve(makeJsonResponse({ status: 'ok' }));
+      }
+      return settingsFetch(url, init);
+    });
+    const el = await mountSettings();
+    await registerPasskey(el, 'laptop');
+    expect(shadow(el).querySelector('#stepUpModal')).not.toBeNull();
+    await submitStepUpCode(el, '654321');
+
+    const totpCall = fetchMock.mock.calls.find(([url]) => requestPath(url) === '/api/v1/login/totp');
+    expect(totpCall, 'login/totp request').toBeDefined();
+    expect(String(totpCall![1].method).toLowerCase()).toBe('post');
+    expect(String(totpCall![1].headers.Authorization)).toBe(`bearer ${original}`);
+    expect(JSON.parse(String(totpCall![1].body))).toEqual({
+      username: 'owner@example.com',
+      code: '654321',
+      sectorID: 'test-sector-id',
+      registrationID: 'reg-1',
+    });
+    expect(localStorage.getItem('spartan-token')).toBe(original);
+    expect(localStorage.getItem('spartan-txid')).toBeNull();
+
+    const begins = fetchMock.mock.calls.filter(([url]) => requestPath(url) === '/api/v1/webauthn/registration/begin');
+    expect(begins).toHaveLength(2);
+    expect(JSON.parse(String(begins[0][1].body)).transactionID).toBeUndefined();
+    expect(JSON.parse(String(begins[1][1].body))).toMatchObject({
+      keyName: 'laptop',
+      sectorID: 'test-sector-id',
+      transactionID: 'tx-step',
+    });
+    const finish = fetchMock.mock.calls.find(([url]) => requestPath(url) === '/api/v1/webauthn/registration/finish');
+    expect(JSON.parse(String(finish![1].body)).transactionID).toBe('tx-step');
+    expect(shadow(el).querySelector('#stepUpModal')).toBeNull();
+  });
+
+  it('sends an email step-up code and submits it as the password field', async () => {
+    const original = localStorage.getItem('spartan-token');
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const path = requestPath(url);
+      const method = String(init?.method || 'get').toLowerCase();
+      if (path === '/api/v1/users/self/mfa' && method === 'get') {
+        return Promise.resolve(makeJsonResponse({ enforcedByPolicy: false, enabled: true }));
+      }
+      if (path === '/api/v1/otp/list') {
+        return Promise.resolve(makeJsonResponse({
+          registrations: [{ ID: 'email-1', DisplayName: 'owner@example.com', Type: 'email', Validated: true }],
+        }));
+      }
+      if (method === 'get' && path.startsWith('/api/v1/totp/')) {
+        return Promise.resolve(makeJsonResponse({ registrations: [] }));
+      }
+      if (path === '/api/v1/login/otp/begin') {
+        return Promise.resolve(makeJsonResponse({ transactionID: 'tx-email-begin' }));
+      }
+      if (path === '/api/v1/login/otp') {
+        return Promise.resolve(makeJsonResponse({
+          transactionID: 'tx-email-ok',
+          status: 'SUCCESS',
+          challengeType: 'otp',
+          token: 'should-not-replace-session',
+        }));
+      }
+      if (path === '/api/v1/webauthn/registration/begin') {
+        return Promise.resolve(beginOk('tx-email-ok'));
+      }
+      if (path === '/api/v1/webauthn/registration/finish') {
+        return Promise.resolve(makeJsonResponse({ status: 'ok' }));
+      }
+      return settingsFetch(url, init);
+    });
+    const el = await mountSettings();
+    await registerPasskey(el, 'laptop');
+    const opened = shadow(el);
+    expect(opened.querySelector('#stepUpModal')).not.toBeNull();
+    expect(opened.querySelector('#stepUpCode')).toBeNull();
+    expect(fetchMock.mock.calls.some(([url]) => requestPath(url) === '/api/v1/webauthn/registration/begin')).toBe(false);
+
+    clickButton(opened, 'Send code');
+    await new Promise<void>((r) => setTimeout(r, 40));
+    const beginOtp = fetchMock.mock.calls.find(([url]) => requestPath(url) === '/api/v1/login/otp/begin');
+    expect(beginOtp, 'otp begin').toBeDefined();
+    expect(String(beginOtp![1].method).toLowerCase()).toBe('post');
+    expect(String(beginOtp![1].headers.Authorization)).toContain('bearer ');
+    expect(JSON.parse(String(beginOtp![1].body))).toEqual({
+      username: 'owner@example.com',
+      sectorID: 'test-sector-id',
+      registrationID: 'email-1',
+    });
+    expect(shadow(el).textContent).toContain('Code sent. Enter it to continue.');
+
+    await submitStepUpCode(el, '246810');
+    const verify = fetchMock.mock.calls.find(([url]) => requestPath(url) === '/api/v1/login/otp');
+    expect(verify, 'otp verify').toBeDefined();
+    expect(JSON.parse(String(verify![1].body))).toEqual({
+      username: 'owner@example.com',
+      password: '246810',
+      transactionID: 'tx-email-begin',
+      sectorID: 'test-sector-id',
+    });
+    const begins = fetchMock.mock.calls.filter(([url]) => requestPath(url) === '/api/v1/webauthn/registration/begin');
+    expect(begins).toHaveLength(1);
+    expect(JSON.parse(String(begins[0][1].body)).transactionID).toBe('tx-email-ok');
+    expect(localStorage.getItem('spartan-token')).toBe(original);
+    expect(localStorage.getItem('spartan-txid')).toBeNull();
+  });
+
+  it('removes a passkey with POST /api/v1/webauthn/unregister and the step-up transaction', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const original = localStorage.getItem('spartan-token');
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const path = requestPath(url);
+      const method = String(init?.method || 'get').toLowerCase();
+      if (path === '/api/v1/users/self/mfa' && method === 'get') {
+        return Promise.resolve(makeJsonResponse({ enforcedByPolicy: true, enabled: true }));
+      }
+      if (path === '/api/v1/webauthn/registration/list') {
+        return Promise.resolve(makeJsonResponse({ registrations: [{ keyName: 'laptop' }] }));
+      }
+      if (path === '/api/v1/login/totp') {
+        return Promise.resolve(makeJsonResponse({
+          transactionID: 'tx-remove',
+          status: 'SUCCESS',
+          challengeType: 'totp',
+          token: 'should-not-replace-session',
+        }));
+      }
+      if (path === '/api/v1/webauthn/unregister') {
+        return Promise.resolve(makeJsonResponse({ status: 'success' }));
+      }
+      return settingsFetch(url, init);
+    });
+    const el = await mountSettings();
+    const remove = shadow(el).querySelector<HTMLButtonElement>('.key-item button.remove');
+    expect(remove, 'remove passkey').not.toBeNull();
+    remove!.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }));
+    await new Promise<void>((r) => setTimeout(r, 40));
+    expect(shadow(el).querySelector('#stepUpModal')).not.toBeNull();
+    expect(fetchMock.mock.calls.some(([url]) => requestPath(url) === '/api/v1/webauthn/unregister')).toBe(false);
+
+    await submitStepUpCode(el, '654321');
+    const call = fetchMock.mock.calls.find(([url]) => requestPath(url) === '/api/v1/webauthn/unregister');
+    expect(call, 'unregister request').toBeDefined();
+    expect(String(call![1].method).toLowerCase()).toBe('post');
+    expect(String(call![1].headers.Authorization)).toContain(`bearer ${original}`);
+    expect(JSON.parse(String(call![1].body))).toEqual({
+      keyName: 'laptop',
+      transactionID: 'tx-remove',
+    });
+    expect(localStorage.getItem('spartan-token')).toBe(original);
+    const deleted = fetchMock.mock.calls.filter(([url, init]) => {
+      return String(init?.method || '').toLowerCase() === 'delete' && requestPath(url).includes('/webauthn');
+    });
+    expect(deleted).toHaveLength(0);
+  });
+
+  it('adds and removes a passkey without the step-up modal when MFA is off', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const path = requestPath(url);
+      if (path === '/api/v1/webauthn/registration/list') {
+        return Promise.resolve(makeJsonResponse({ registrations: [{ keyName: 'laptop' }] }));
+      }
+      if (path === '/api/v1/webauthn/registration/begin') {
+        return Promise.resolve(beginOk('tx-begin-1'));
+      }
+      if (path === '/api/v1/webauthn/registration/finish') {
+        return Promise.resolve(makeJsonResponse({ status: 'ok' }));
+      }
+      if (path === '/api/v1/webauthn/unregister') {
+        return Promise.resolve(makeJsonResponse({ status: 'success' }));
+      }
+      return settingsFetch(url, init);
+    });
+    const el = await mountSettings();
+    await registerPasskey(el, 'backup');
+    expect(shadow(el).querySelector('#stepUpModal')).toBeNull();
+    expect(shadow(el).textContent).not.toContain("Confirm it's you");
+    const begin = fetchMock.mock.calls.find(([url]) => requestPath(url) === '/api/v1/webauthn/registration/begin');
+    expect(JSON.parse(String(begin![1].body))).toEqual({
+      keyName: 'backup',
+      sectorID: 'test-sector-id',
+    });
+    const finish = fetchMock.mock.calls.find(([url]) => requestPath(url) === '/api/v1/webauthn/registration/finish');
+    expect(JSON.parse(String(finish![1].body)).transactionID).toBe('tx-begin-1');
+
+    const remove = shadow(el).querySelector<HTMLButtonElement>('.key-item button.remove');
+    remove!.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }));
+    await new Promise<void>((r) => setTimeout(r, 40));
+    expect(shadow(el).querySelector('#stepUpModal')).toBeNull();
+    const call = fetchMock.mock.calls.find(([url]) => requestPath(url) === '/api/v1/webauthn/unregister');
+    expect(JSON.parse(String(call![1].body))).toEqual({ keyName: 'laptop' });
+  });
+
+  it('shows visible text when a passkey change fails for another reason', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const path = requestPath(url);
+      if (path === '/api/v1/webauthn/registration/list') {
+        return Promise.resolve(makeJsonResponse({ registrations: [{ keyName: 'laptop' }] }));
+      }
+      if (path === '/api/v1/webauthn/registration/begin') {
+        return Promise.resolve(makeJsonResponse({}, 500));
+      }
+      if (path === '/api/v1/webauthn/unregister') {
+        return Promise.resolve(makeJsonResponse({}, 502));
+      }
+      return settingsFetch(url, init);
+    });
+    const el = await mountSettings();
+    await registerPasskey(el, 'backup');
+    const addError = shadow(el).querySelector('.error-message');
+    expect(addError).not.toBeNull();
+    expect(addError!.textContent).toContain('Could not register the passkey.');
+    expect(addError!.textContent).not.toContain('[object');
+    expect(shadow(el).querySelector('#stepUpModal')).toBeNull();
+
+    const remove = shadow(el).querySelector<HTMLButtonElement>('.key-item button.remove');
+    remove!.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }));
+    await new Promise<void>((r) => setTimeout(r, 40));
+    const removeError = shadow(el).querySelector('.error-message');
+    expect(removeError).not.toBeNull();
+    expect(removeError!.textContent).toContain('Error removing WebAuthn Registration');
+    expect(removeError!.textContent).not.toContain('[object');
+  });
+
+  it('shows that a factor is required and does not start registration when none is validated', async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const path = requestPath(url);
+      const method = String(init?.method || 'get').toLowerCase();
+      if (path === '/api/v1/users/self/mfa' && method === 'get') {
+        return Promise.resolve(makeJsonResponse({ enforcedByPolicy: true, enabled: true }));
+      }
+      if (path === '/api/v1/otp/list') {
+        return Promise.resolve(makeJsonResponse({
+          registrations: [
+            { ID: 'sms-1', DisplayName: '+15551212', Type: 'phone', Validated: true },
+            { ID: 'email-2', DisplayName: 'new@example.com', Type: 'email', Validated: false },
+          ],
+        }));
+      }
+      if (method === 'get' && path.startsWith('/api/v1/totp/')) {
+        return Promise.resolve(makeJsonResponse({
+          registrations: [{ ID: 'reg-1', DisplayName: 'Phone', Validated: false }],
+        }));
+      }
+      if (path === '/api/v1/webauthn/registration/begin') {
+        return Promise.resolve(makeJsonResponse({ error: 'mfa_step_up_required' }, 403));
+      }
+      return settingsFetch(url, init);
+    });
+    const el = await mountSettings();
+    await registerPasskey(el, 'laptop');
+    const sr = shadow(el);
+    expect(sr.textContent).toContain('Add an email code or an authenticator app before you can change passkeys.');
+    expect(sr.querySelector('.error-message')?.textContent).toContain('Add an email code or an authenticator app before you can change passkeys.');
+    expect(sr.querySelector('#stepUpModal')).toBeNull();
+    expect(fetchMock.mock.calls.some(([url]) => requestPath(url) === '/api/v1/webauthn/registration/begin')).toBe(false);
+  });
+
+  it('keeps the session token and shows the step-up error when the authenticator code is rejected', async () => {
+    const original = localStorage.getItem('spartan-token');
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const path = requestPath(url);
+      const method = String(init?.method || 'get').toLowerCase();
+      if (path === '/api/v1/users/self/mfa' && method === 'get') {
+        return Promise.resolve(makeJsonResponse({ enforcedByPolicy: true, enabled: true }));
+      }
+      if (path === '/api/v1/login/totp') {
+        return Promise.resolve(makeJsonResponse({ message: 'error verifying totp' }, 401));
+      }
+      return settingsFetch(url, init);
+    });
+    const el = await mountSettings();
+    await registerPasskey(el, 'laptop');
+    await submitStepUpCode(el, '000000');
+    const modal = shadow(el).querySelector('#stepUpModal');
+    expect(modal).not.toBeNull();
+    expect(modal!.textContent).toContain('That code could not be verified.');
+    expect(localStorage.getItem('spartan-token')).toBe(original);
+    expect(fetchMock.mock.calls.some(([url]) => requestPath(url) === '/api/v1/webauthn/registration/begin')).toBe(false);
+  });
+
+  it('shows sa-stepup-required and does not loop when the retried passkey call is still blocked', async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const path = requestPath(url);
+      if (path === '/api/v1/login/totp') {
+        return Promise.resolve(makeJsonResponse({
+          transactionID: 'tx-stale',
+          status: 'SUCCESS',
+          challengeType: 'totp',
+          token: 'should-not-replace-session',
+        }));
+      }
+      if (path === '/api/v1/webauthn/registration/begin') {
+        return Promise.resolve(makeJsonResponse({ error: 'mfa_step_up_required' }, 403));
+      }
+      return settingsFetch(url, init);
+    });
+    const el = await mountSettings();
+    await registerPasskey(el, 'laptop');
+    await submitStepUpCode(el, '654321');
+
+    const sr = shadow(el);
+    expect(sr.querySelector('#stepUpModal')).toBeNull();
+    expect(sr.querySelector('.error-message')?.textContent).toContain(
+      "Confirm it's you with an email code or authenticator app before changing passkeys.",
+    );
+    expect(fetchMock.mock.calls.filter(([url]) => requestPath(url) === '/api/v1/webauthn/registration/begin')).toHaveLength(2);
+    expect(fetchMock.mock.calls.filter(([url]) => requestPath(url) === '/api/v1/login/totp')).toHaveLength(1);
+    expect(localStorage.getItem('spartan-token')).not.toBe('should-not-replace-session');
+  });
+
+  it('reuses the login transaction when the session token is under 10 minutes old', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const original = fakeJwt({ iat: Math.round(Date.now() / 1000) - 60 });
+    localStorage.setItem('spartan-token', original);
+    localStorage.setItem('spartan-txid', 'tx-login');
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const path = requestPath(url);
+      const method = String(init?.method || 'get').toLowerCase();
+      if (path === '/api/v1/users/self/mfa' && method === 'get') {
+        return Promise.resolve(makeJsonResponse({ enforcedByPolicy: true, enabled: true }));
+      }
+      if (path === '/api/v1/webauthn/registration/list') {
+        return Promise.resolve(makeJsonResponse({ registrations: [{ keyName: 'laptop' }] }));
+      }
+      if (path === '/api/v1/webauthn/unregister') {
+        return Promise.resolve(makeJsonResponse({ status: 'success' }));
+      }
+      return settingsFetch(url, init);
+    });
+    const el = await mountSettings();
+    const remove = shadow(el).querySelector<HTMLButtonElement>('.key-item button.remove');
+    remove!.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }));
+    await new Promise<void>((r) => setTimeout(r, 40));
+
+    expect(shadow(el).querySelector('#stepUpModal')).toBeNull();
+    const call = fetchMock.mock.calls.find(([url]) => requestPath(url) === '/api/v1/webauthn/unregister');
+    expect(JSON.parse(String(call![1].body))).toEqual({
+      keyName: 'laptop',
+      transactionID: 'tx-login',
+    });
+    expect(localStorage.getItem('spartan-token')).toBe(original);
+    expect(localStorage.getItem('spartan-txid')).toBe('tx-login');
+    expect(fetchMock.mock.calls.some(([url]) => requestPath(url) === '/api/v1/login/totp')).toBe(false);
+  });
+
+  it('asks for a new code when the saved login transaction is rejected', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    localStorage.setItem('spartan-token', fakeJwt({ iat: Math.round(Date.now() / 1000) - 30 }));
+    localStorage.setItem('spartan-txid', 'tx-gone');
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const path = requestPath(url);
+      const method = String(init?.method || 'get').toLowerCase();
+      if (path === '/api/v1/users/self/mfa' && method === 'get') {
+        return Promise.resolve(makeJsonResponse({ enforcedByPolicy: true, enabled: true }));
+      }
+      if (path === '/api/v1/webauthn/registration/list') {
+        return Promise.resolve(makeJsonResponse({ registrations: [{ keyName: 'laptop' }] }));
+      }
+      if (path === '/api/v1/webauthn/unregister') {
+        return Promise.resolve(makeJsonResponse({ error: 'mfa_step_up_required' }, 403));
+      }
+      return settingsFetch(url, init);
+    });
+    const el = await mountSettings();
+    const remove = shadow(el).querySelector<HTMLButtonElement>('.key-item button.remove');
+    remove!.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }));
+    await new Promise<void>((r) => setTimeout(r, 40));
+
+    expect(shadow(el).querySelector('#stepUpModal')).not.toBeNull();
+    const calls = fetchMock.mock.calls.filter(([url]) => requestPath(url) === '/api/v1/webauthn/unregister');
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(String(calls[0][1].body)).transactionID).toBe('tx-gone');
+    expect(localStorage.getItem('spartan-txid')).toBe('tx-gone');
+  });
+
+  it('does not send a login transaction once the session token is 10 minutes old', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    localStorage.setItem('spartan-token', fakeJwt({ iat: Math.round(Date.now() / 1000) - (11 * 60) }));
+    localStorage.setItem('spartan-txid', 'tx-old');
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      const path = requestPath(url);
+      const method = String(init?.method || 'get').toLowerCase();
+      if (path === '/api/v1/users/self/mfa' && method === 'get') {
+        return Promise.resolve(makeJsonResponse({ enforcedByPolicy: true, enabled: true }));
+      }
+      if (path === '/api/v1/webauthn/registration/list') {
+        return Promise.resolve(makeJsonResponse({ registrations: [{ keyName: 'laptop' }] }));
+      }
+      if (path === '/api/v1/webauthn/unregister') {
+        return Promise.resolve(makeJsonResponse({ status: 'success' }));
+      }
+      return settingsFetch(url, init);
+    });
+    const el = await mountSettings();
+    const remove = shadow(el).querySelector<HTMLButtonElement>('.key-item button.remove');
+    remove!.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }));
+    await new Promise<void>((r) => setTimeout(r, 40));
+
+    expect(shadow(el).querySelector('#stepUpModal')).not.toBeNull();
+    expect(fetchMock.mock.calls.some(([url]) => requestPath(url) === '/api/v1/webauthn/unregister')).toBe(false);
+    expect(localStorage.getItem('spartan-txid')).toBe('tx-old');
   });
 });
