@@ -103,5 +103,18 @@
   "sa-current-password": "Contraseña actual",
   "sa-password-update": "Actualizar contraseña",
   "sa-password-updated": "Contraseña actualizada.",
-  "sa-password-change-error": "No se pudo actualizar la contraseña. Por favor intenta de nuevo."
+  "sa-password-change-error": "No se pudo actualizar la contraseña. Por favor intenta de nuevo.",
+
+  "sa-stepup-title": "Confirma que eres tú",
+  "sa-stepup-prompt": "Agregar o quitar una clave de acceso requiere un código de correo o de autenticación reciente.",
+  "sa-stepup-email": "Enviar un código por correo",
+  "sa-stepup-totp": "Aplicación de autenticación",
+  "sa-stepup-code": "Código de verificación",
+  "sa-stepup-send": "Enviar código",
+  "sa-stepup-verify": "Verificar",
+  "sa-stepup-sent": "Código enviado. Introdúcelo para continuar.",
+  "sa-stepup-error": "No se pudo verificar ese código.",
+  "sa-stepup-required": "Confirma que eres tú con un código de correo o la aplicación de autenticación antes de cambiar las claves de acceso.",
+  "sa-stepup-none": "Agrega un código de correo o una aplicación de autenticación antes de cambiar las claves de acceso.",
+  "error-webauthn-register": "No se pudo registrar la clave de acceso."
 }

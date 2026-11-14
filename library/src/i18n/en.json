@@ -138,5 +138,18 @@
   "sa-current-password": "Current password",
   "sa-password-update": "Update password",
   "sa-password-updated": "Password updated.",
-  "sa-password-change-error": "Could not update the password. Please try again."
+  "sa-password-change-error": "Could not update the password. Please try again.",
+
+  "sa-stepup-title": "Confirm it's you",
+  "sa-stepup-prompt": "Adding or removing a passkey needs a recent email code or authenticator code.",
+  "sa-stepup-email": "Email a code",
+  "sa-stepup-totp": "Authenticator app",
+  "sa-stepup-code": "Verification code",
+  "sa-stepup-send": "Send code",
+  "sa-stepup-verify": "Verify",
+  "sa-stepup-sent": "Code sent. Enter it to continue.",
+  "sa-stepup-error": "That code could not be verified.",
+  "sa-stepup-required": "Confirm it's you with an email code or authenticator app before changing passkeys.",
+  "sa-stepup-none": "Add an email code or an authenticator app before you can change passkeys.",
+  "error-webauthn-register": "Could not register the passkey."
 }

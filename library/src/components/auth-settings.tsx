@@ -1,7 +1,7 @@
 import {createSignal, onMount, Show} from "solid-js";
 import {customElement} from "solid-element";
 import {setupBanana} from './banana';
-import {getDecodedSpartanToken, getSpartanToken} from "./spartanToken";
+import {getDecodedSpartanToken, getSpartanToken, recentLoginTransactionID} from "./spartanToken";
 import {totpQrSvg} from "./totpQr";
 
 import {
@@ -406,6 +406,17 @@ customElement("spartan-account-settings", defaultProps, (props) => {
   const [mfaSettingKnown, setMfaSettingKnown] = createSignal(false);
   const [mfaEnforcedByPolicy, setMfaEnforcedByPolicy] = createSignal(false);
   const [mfaOptIn, setMfaOptIn] = createSignal(false);
+  const [showStepUp, setShowStepUp] = createSignal(false);
+  const [stepUpPhase, setStepUpPhase] = createSignal<'pick' | 'totp' | 'email' | 'email-code'>('pick');
+  const [stepUpCode, setStepUpCode] = createSignal("");
+  const [stepUpError, setStepUpError] = createSignal("");
+  const [stepUpNotice, setStepUpNotice] = createSignal("");
+  const [stepUpRegistrationID, setStepUpRegistrationID] = createSignal("");
+  // A fresh step-up id stays in memory. A login id already in spartan-txid may be
+  // tried first while the session token is under 10 minutes old. Never replace spartan-token.
+  const [stepUpTransactionID, setStepUpTransactionID] = createSignal("");
+  const [stepUpOtpTx, setStepUpOtpTx] = createSignal("");
+  const [pendingPasskey, setPendingPasskey] = createSignal<PendingPasskeyAction | null>(null);
 
   const banana = setupBanana(props.locale);
 
@@ -624,37 +635,205 @@ customElement("spartan-account-settings", defaultProps, (props) => {
     };
   }
 
-  function beginWebAuthnRegistration() {
-    if (isSubmitting()) return;
-    setIsSubmitting(true);
-    let requestInit = getFetchInit('post');
-    requestInit.body = JSON.stringify({
-      keyName: newKeyName(),
-      sectorID: props.sector,
-    });
-    fetch(`${props.domain}/api/v1/webauthn/registration/begin`, requestInit).then((response) => {
-      if (response.status === 200) {
-        return response.json();
-      } else {
-        throw response;
-      }
-    }).then(data => {
-      console.log(data);
-      return finishWebAuthnRegistration(data as BeginWebAuthnRegistrationResponse)
-    }).catch((res) => {
-      if (res.json) {
-        res.json().then((data: any) => {
-          setErrorMessage(data.message);
-        });
-      } else {
-        setErrorMessage(res);
-      }
-    }).finally(() => {
-      setIsSubmitting(false);
-    });
+  function isEmailOtp(reg: OTPRegistration): boolean {
+    const type = String(reg?.Type ?? '').toLowerCase();
+    return type === 'email' || type === '2';
   }
 
-  async function finishWebAuthnRegistration(beginResponse: BeginWebAuthnRegistrationResponse) {
+  function validatedEmailRegs(): OTPRegistration[] {
+    const rows = otpRegistrations();
+    if (!rows) return [];
+    return rows.filter((reg) => !!reg?.Validated && isEmailOtp(reg));
+  }
+
+  function validatedTotpRegs(): TOTPRegistration[] {
+    const rows = totpRegistrations();
+    if (!rows) return [];
+    return rows.filter((reg) => !!reg?.Validated);
+  }
+
+  function passkeyMfaRequired(): boolean {
+    return mfaEnforcedByPolicy() || mfaOptIn();
+  }
+
+  async function readBody(res: Response): Promise<ApiErrorBody> {
+    try {
+      return await res.json();
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function isStepUpRequired(data: ApiErrorBody): boolean {
+    return data?.error === 'mfa_step_up_required' || data?.message === 'mfa_step_up_required';
+  }
+
+  function passkeyFailureMessage(data: ApiErrorBody, fallbackKey: string): string {
+    const error = typeof data?.error === 'string' ? data.error.trim() : '';
+    const message = typeof data?.message === 'string' ? data.message.trim() : '';
+    const detail = error || message;
+    if (!detail || detail === '[object Response]' || detail === '[object Object]') {
+      return banana.i18n(fallbackKey);
+    }
+    return detail;
+  }
+
+  function acceptedStepUp(data: ApiErrorBody): string {
+    const tx = typeof data?.transactionID === 'string' ? data.transactionID.trim() : '';
+    if (!tx) return '';
+    const status = data?.status;
+    if (status == null || status === '' || status === 'SUCCESS' || status === 0 || status === '0') {
+      return tx;
+    }
+    return '';
+  }
+
+  function closeStepUp() {
+    setShowStepUp(false);
+    setStepUpError('');
+    setStepUpNotice('');
+    setStepUpCode('');
+    setStepUpOtpTx('');
+    setPendingPasskey(null);
+  }
+
+  function chooseStepUpMethod(method: 'totp' | 'email') {
+    setStepUpError('');
+    setStepUpNotice('');
+    setStepUpCode('');
+    if (method === 'totp') {
+      setStepUpRegistrationID(validatedTotpRegs()[0]?.ID || '');
+      setStepUpPhase('totp');
+      return;
+    }
+    setStepUpRegistrationID(validatedEmailRegs()[0]?.ID || '');
+    setStepUpPhase('email');
+  }
+
+  function openStepUp(action: 'add' | 'remove', keyName: string) {
+    setPendingPasskey({action, keyName});
+    setStepUpCode('');
+    setStepUpError('');
+    setStepUpNotice('');
+    setStepUpOtpTx('');
+    const emails = validatedEmailRegs();
+    const totps = validatedTotpRegs();
+    if (emails.length === 0 && totps.length === 0) {
+      setShowStepUp(false);
+      setErrorMessage(banana.i18n('sa-stepup-none'));
+      return;
+    }
+    setErrorMessage('');
+    if (emails.length > 0 && totps.length > 0) {
+      setStepUpPhase('pick');
+      setStepUpRegistrationID('');
+    } else if (totps.length > 0) {
+      setStepUpPhase('totp');
+      setStepUpRegistrationID(totps[0].ID);
+    } else {
+      setStepUpPhase('email');
+      setStepUpRegistrationID(emails[0].ID);
+    }
+    setShowStepUp(true);
+  }
+
+  function handlePasskeyDenied(data: ApiErrorBody, action: 'add' | 'remove', keyName: string, fromStepUp: boolean): boolean {
+    if (!isStepUpRequired(data)) return false;
+    setStepUpTransactionID('');
+    if (fromStepUp) {
+      setShowStepUp(false);
+      setPendingPasskey(null);
+      setErrorMessage(banana.i18n('sa-stepup-required'));
+      return true;
+    }
+    openStepUp(action, keyName);
+    return true;
+  }
+
+  function applyStepUp(transactionID: string) {
+    // The step-up response must not replace the signed-in session.
+    setStepUpTransactionID(transactionID);
+    setShowStepUp(false);
+    setStepUpError('');
+    setStepUpCode('');
+    setStepUpNotice('');
+    setStepUpOtpTx('');
+    const pending = pendingPasskey();
+    if (!pending) return;
+    if (pending.action === 'add') {
+      beginWebAuthnRegistration(true);
+      return;
+    }
+    removeWebAuthnRegistration(pending.keyName, true);
+  }
+
+  function startPasskeyAdd() {
+    const keyName = newKeyName();
+    if (!keyName || isSubmitting()) return;
+    setErrorMessage('');
+    if (passkeyMfaRequired() && !stepUpTransactionID()) {
+      const loginTx = recentLoginTransactionID();
+      if (loginTx) {
+        setStepUpTransactionID(loginTx);
+        beginWebAuthnRegistration(false);
+        return;
+      }
+      openStepUp('add', keyName);
+      return;
+    }
+    beginWebAuthnRegistration(false);
+  }
+
+  function startPasskeyRemove(keyName: string) {
+    if (!keyName || isSubmitting()) return;
+    setErrorMessage('');
+    if (passkeyMfaRequired() && !stepUpTransactionID()) {
+      const loginTx = recentLoginTransactionID();
+      if (loginTx) {
+        setStepUpTransactionID(loginTx);
+        removeWebAuthnRegistration(keyName, false);
+        return;
+      }
+      openStepUp('remove', keyName);
+      return;
+    }
+    removeWebAuthnRegistration(keyName, false);
+  }
+
+  async function beginWebAuthnRegistration(fromStepUp = false) {
+    if (isSubmitting()) return;
+    const keyName = newKeyName();
+    if (!keyName) return;
+    setIsSubmitting(true);
+    setErrorMessage('');
+    try {
+      const requestInit = getFetchInit('post');
+      const body: Record<string, string> = {
+        keyName,
+        sectorID: props.sector,
+      };
+      if (stepUpTransactionID()) {
+        body.transactionID = stepUpTransactionID();
+      }
+      requestInit.body = JSON.stringify(body);
+      const response = await fetch(`${props.domain}/api/v1/webauthn/registration/begin`, requestInit);
+      if (!response.ok) {
+        const data = await readBody(response);
+        if (handlePasskeyDenied(data, 'add', keyName, fromStepUp)) return;
+        setErrorMessage(passkeyFailureMessage(data, 'error-webauthn-register'));
+        return;
+      }
+      const data = await readBody(response);
+      await finishWebAuthnRegistration(data as BeginWebAuthnRegistrationResponse, fromStepUp);
+    } catch (err) {
+      console.error(err);
+      setErrorMessage(banana.i18n('error-webauthn-register'));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function finishWebAuthnRegistration(beginResponse: BeginWebAuthnRegistrationResponse, fromStepUp = false) {
     try {
       // @ts-ignore - type mismatch between Go JSON and CredentialCreationOptionsJSON but shapes are compatible
       const options = parseCreationOptionsFromJSON(beginResponse.Options);
@@ -671,37 +850,153 @@ customElement("spartan-account-settings", defaultProps, (props) => {
       requestInit.body = JSON.stringify(rawBody);
       // now send it to the server
       const response = await fetch(`${props.domain}/api/v1/webauthn/registration/finish`, requestInit);
-      if (response.status !== 200) {
-        const data = await response.json();
-        setErrorMessage(data.message);
+      if (!response.ok) {
+        const data = await readBody(response);
+        if (handlePasskeyDenied(data, 'add', newKeyName(), fromStepUp)) return;
+        setErrorMessage(passkeyFailureMessage(data, 'error-webauthn-register'));
         return;
       }
+      // Finish deletes the transaction, so it cannot be reused.
+      setStepUpTransactionID('');
+      setPendingPasskey(null);
       setShowAddKey(false);
       setNewKeyName('');
       getSecurityKeys();
     } catch (err: any) {
       console.error("WebAuthn registration error:", err);
-      setErrorMessage(err?.message || String(err));
+      const message = typeof err?.message === 'string' ? err.message.trim() : '';
+      if (!message || message === '[object Response]' || message === '[object Object]') {
+        setErrorMessage(banana.i18n('error-webauthn-register'));
+        return;
+      }
+      setErrorMessage(message);
     }
   }
 
-  async function removeWebAuthnRegistration(keyName: string) {
-    let requestInit = getFetchInit('delete');
-    requestInit.body = JSON.stringify({
-      ID: keyName,
-    });
+  async function removeWebAuthnRegistration(keyName: string, fromStepUp = false) {
+    if (isSubmitting()) return;
+    setIsSubmitting(true);
+    setErrorMessage('');
     try {
-      const res = await fetch(`${props.domain}/api/v1/webauthn/${keyName}`, requestInit);
-      if (res.status !== 200) {
-        setErrorMessage(banana.i18n('error-webauthn-remove'));
+      const requestInit = getFetchInit('post');
+      const body: Record<string, string> = {
+        keyName,
+      };
+      if (stepUpTransactionID()) {
+        body.transactionID = stepUpTransactionID();
+      }
+      requestInit.body = JSON.stringify(body);
+      const res = await fetch(`${props.domain}/api/v1/webauthn/unregister`, requestInit);
+      if (!res.ok) {
+        const data = await readBody(res);
+        if (handlePasskeyDenied(data, 'remove', keyName, fromStepUp)) return;
+        setErrorMessage(passkeyFailureMessage(data, 'error-webauthn-remove'));
         return;
       }
+      // Unregister keeps the transaction, so another remove can reuse it.
+      setPendingPasskey(null);
       getSecurityKeys();
     } catch (e) {
       console.error(e);
       setErrorMessage(banana.i18n('error-webauthn-remove'));
-      return
+    } finally {
+      setIsSubmitting(false);
     }
+  }
+
+  async function sendStepUpEmail() {
+    if (isSubmitting()) return;
+    setIsSubmitting(true);
+    setStepUpError('');
+    try {
+      const requestInit = getFetchInit('post');
+      requestInit.body = JSON.stringify({
+        username: username(),
+        sectorID: props.sector,
+        registrationID: stepUpRegistrationID(),
+      });
+      const res = await fetch(`${props.domain}/api/v1/login/otp/begin`, requestInit);
+      const data = await readBody(res);
+      if (!res.ok || !data.transactionID) {
+        setStepUpError(banana.i18n('sa-stepup-error'));
+        return;
+      }
+      setStepUpOtpTx(data.transactionID);
+      setStepUpCode('');
+      setStepUpNotice(banana.i18n('sa-stepup-sent'));
+      setStepUpPhase('email-code');
+    } catch (e) {
+      console.error(e);
+      setStepUpError(banana.i18n('sa-stepup-error'));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function verifyStepUpEmail() {
+    if (isSubmitting()) return;
+    const code = stepUpCode();
+    if (!code.trim()) {
+      setStepUpError(banana.i18n('sa-stepup-error'));
+      return;
+    }
+    setIsSubmitting(true);
+    setStepUpError('');
+    let nextTx = '';
+    try {
+      const requestInit = getFetchInit('post');
+      requestInit.body = JSON.stringify({
+        username: username(),
+        password: code,
+        transactionID: stepUpOtpTx(),
+        sectorID: props.sector,
+      });
+      const res = await fetch(`${props.domain}/api/v1/login/otp`, requestInit);
+      const data = await readBody(res);
+      nextTx = res.ok ? acceptedStepUp(data) : '';
+      if (!nextTx) {
+        setStepUpError(banana.i18n('sa-stepup-error'));
+      }
+    } catch (e) {
+      console.error(e);
+      setStepUpError(banana.i18n('sa-stepup-error'));
+    } finally {
+      setIsSubmitting(false);
+    }
+    if (nextTx) applyStepUp(nextTx);
+  }
+
+  async function verifyStepUpTotp() {
+    if (isSubmitting()) return;
+    const code = stepUpCode().trim();
+    if (!code) {
+      setStepUpError(banana.i18n('sa-stepup-error'));
+      return;
+    }
+    setIsSubmitting(true);
+    setStepUpError('');
+    let nextTx = '';
+    try {
+      const requestInit = getFetchInit('post');
+      requestInit.body = JSON.stringify({
+        username: username(),
+        code,
+        sectorID: props.sector,
+        registrationID: stepUpRegistrationID() || validatedTotpRegs()[0]?.ID || '',
+      });
+      const res = await fetch(`${props.domain}/api/v1/login/totp`, requestInit);
+      const data = await readBody(res);
+      nextTx = res.ok ? acceptedStepUp(data) : '';
+      if (!nextTx) {
+        setStepUpError(banana.i18n('sa-stepup-error'));
+      }
+    } catch (e) {
+      console.error(e);
+      setStepUpError(banana.i18n('sa-stepup-error'));
+    } finally {
+      setIsSubmitting(false);
+    }
+    if (nextTx) applyStepUp(nextTx);
   }
 
   async function getSecurityKeys() {
@@ -981,7 +1276,7 @@ customElement("spartan-account-settings", defaultProps, (props) => {
       <style>{style}</style>
       <style>{customStyles}</style>
       <h1 class={'header'}>{banana.i18n('sa-account-settings')}</h1>
-      {errorMessage && <span class={'error-message'}>{errorMessage}</span>}
+      {errorMessage() && <span class={'error-message'}>{errorMessage()}</span>}
       <Show when={!settingsLoading()} fallback={
         <div class={'skeleton'} role="status" aria-busy="true">
           <span class={'sr-only'}>{banana.i18n('sa-loading')}</span>
@@ -1052,8 +1347,7 @@ customElement("spartan-account-settings", defaultProps, (props) => {
                 <button class={'btn remove'}
                         onClick={() => {
                           if (confirm(banana.i18n('sa-confirm-delete-key'))) {
-                            // delete key
-                            removeWebAuthnRegistration(key.keyName);
+                            startPasskeyRemove(key.keyName);
                           }
                         }}>{banana.i18n('sa-remove')}</button>
               </div>
@@ -1081,7 +1375,7 @@ customElement("spartan-account-settings", defaultProps, (props) => {
                        onInput={(e) => setNewKeyName(e.currentTarget.value)}/>
                 <button class={'btn remove'}
                         onClick={() => setShowAddKey(false)}>{banana.i18n('sa-cancel')}</button>
-                <button class={'btn add'} onClick={() => newKeyName() !== '' && beginWebAuthnRegistration()}
+                <button class={'btn add'} onClick={() => startPasskeyAdd()}
                         disabled={newKeyName() === '' || isSubmitting()}>{banana.i18n('sa-register')}</button>
               </div>
             </div>
@@ -1267,6 +1561,58 @@ customElement("spartan-account-settings", defaultProps, (props) => {
           </div>
         </div>
       )}
+      {showStepUp() && (
+        <div class={"modal"} id={"stepUpModal"} onClick={() => closeStepUp()}>
+          <div class={"modal-content"} onClick={(e) => e.stopPropagation()}>
+            <span class={"close"} onClick={() => closeStepUp()}>&times;</span>
+            <h2>{banana.i18n('sa-stepup-title')}</h2>
+            {stepUpError() && <span class={'error-message'}>{stepUpError()}</span>}
+            <p>{banana.i18n('sa-stepup-prompt')}</p>
+            {stepUpPhase() === 'pick' && (
+              <div>
+                <button class={"btn verify"} type={"button"}
+                        onClick={() => chooseStepUpMethod('email')}>{banana.i18n('sa-stepup-email')}</button>
+                <button class={"btn verify"} type={"button"}
+                        onClick={() => chooseStepUpMethod('totp')}>{banana.i18n('sa-stepup-totp')}</button>
+              </div>
+            )}
+            {stepUpPhase() === 'totp' && validatedTotpRegs().length > 1 && (
+              <select id={"stepUpRegistration"} value={stepUpRegistrationID()}
+                      onChange={(e) => setStepUpRegistrationID(e.currentTarget.value)}>
+                {validatedTotpRegs().map((reg) => (
+                  <option value={reg.ID}>{reg.DisplayName || reg.ID}</option>
+                ))}
+              </select>
+            )}
+            {stepUpPhase() === 'email' && validatedEmailRegs().length > 1 && (
+              <select id={"stepUpRegistration"} value={stepUpRegistrationID()}
+                      onChange={(e) => setStepUpRegistrationID(e.currentTarget.value)}>
+                {validatedEmailRegs().map((reg) => (
+                  <option value={reg.ID}>{reg.DisplayName || reg.ID}</option>
+                ))}
+              </select>
+            )}
+            {stepUpPhase() === 'email' && (
+              <button class={"btn verify"} type={"button"} disabled={isSubmitting()}
+                      onClick={() => sendStepUpEmail()}>{banana.i18n('sa-stepup-send')}</button>
+            )}
+            {(stepUpPhase() === 'totp' || stepUpPhase() === 'email-code') && stepUpNotice() && (
+              <p>{stepUpNotice()}</p>
+            )}
+            {(stepUpPhase() === 'totp' || stepUpPhase() === 'email-code') && (
+              <input id={"stepUpCode"} type={"text"} autocomplete={"one-time-code"}
+                     placeholder={banana.i18n('sa-stepup-code')}
+                     aria-label={banana.i18n('sa-stepup-code')}
+                     value={stepUpCode()}
+                     onInput={(e) => setStepUpCode(e.currentTarget.value)}/>
+            )}
+            {(stepUpPhase() === 'totp' || stepUpPhase() === 'email-code') && (
+              <button class={"btn verify"} type={"button"} disabled={isSubmitting()}
+                      onClick={() => stepUpPhase() === 'totp' ? verifyStepUpTotp() : verifyStepUpEmail()}>{banana.i18n('sa-stepup-verify')}</button>
+            )}
+          </div>
+        </div>
+      )}
       </Show>
     </div>
   );
@@ -1319,3 +1665,18 @@ interface TOTPRegistration {
   ID: string;
   Validated: boolean;
 }
+
+type PendingPasskeyAction = {
+  action: 'add' | 'remove';
+  keyName: string;
+};
+
+type ApiErrorBody = {
+  error?: string;
+  message?: string;
+  transactionID?: string;
+  status?: string | number;
+  Options?: PublicKeyCreds;
+  TransactionID?: string;
+  SectorID?: string;
+};

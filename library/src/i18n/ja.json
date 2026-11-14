@@ -105,5 +105,18 @@
   "sa-current-password": "現在のパスワード",
   "sa-password-update": "パスワードを更新",
   "sa-password-updated": "パスワードを更新しました。",
-  "sa-password-change-error": "パスワードを更新できませんでした。もう一度お試しください。"
+  "sa-password-change-error": "パスワードを更新できませんでした。もう一度お試しください。",
+
+  "sa-stepup-title": "本人確認",
+  "sa-stepup-prompt": "パスキーの追加や削除には、最近のメールコードか認証アプリのコードが必要です。",
+  "sa-stepup-email": "メールでコードを送る",
+  "sa-stepup-totp": "認証アプリ",
+  "sa-stepup-code": "確認コード",
+  "sa-stepup-send": "コードを送る",
+  "sa-stepup-verify": "確認",
+  "sa-stepup-sent": "コードを送信しました。入力して続行してください。",
+  "sa-stepup-error": "そのコードを確認できませんでした。",
+  "sa-stepup-required": "パスキーを変更する前に、メールコードか認証アプリで本人確認してください。",
+  "sa-stepup-none": "パスキーを変更する前に、メールコードか認証アプリを追加してください。",
+  "error-webauthn-register": "パスキーを登録できませんでした。"
 }
