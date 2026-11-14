@@ -947,6 +947,8 @@ customElement("spartan-login", defaultProps, (props) => {
   }
 
   function passwordLogin() {
+    // A stored ceremony id belongs to an earlier challenge. Do not send it
+    // on an unrelated password submit. Only a reset continuation passes one.
     console.log("password login");
     setEnrollmentFromSignup(false);
     return fetch(props.domain + "/api/v1/login/password", {
@@ -1144,12 +1146,33 @@ customElement("spartan-login", defaultProps, (props) => {
       }
       throw new Error(banana.i18n('sa-reset-error'));
     }).then(data => {
-      console.log(data);
-      setResetComplete(true);
+      const transactionID = data && typeof data.transactionID === 'string' ? data.transactionID : '';
+      if (!transactionID) {
+        console.log(data);
+        setResetComplete(true);
+        setResetCode('');
+        setNewPassword('');
+        setPassword('');
+        setMode(props.startMode);
+        return;
+      }
+      // Build the body first, then drop the new password from the signals.
+      const body = JSON.stringify({
+        username: username(),
+        password: newPassword(),
+        sectorID: props.sector,
+        transactionID,
+      });
       setResetCode('');
       setNewPassword('');
       setPassword('');
-      setMode(props.startMode);
+      setEnrollmentFromSignup(false);
+      return fetch(props.domain + "/api/v1/login/password", {
+        method: 'post',
+        mode: 'cors',
+        cache: 'no-cache',
+        body,
+      }).then(handleLoginResponse);
     }).catch((err: Error) => {
       setErrorMessage(err.message);
       console.log(err);

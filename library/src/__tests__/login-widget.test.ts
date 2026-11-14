@@ -1047,3 +1047,127 @@ describe('<spartan-login> – breached passwords', () => {
     expect(text).not.toContain('Error creating user.');
   });
 });
+
+describe('<spartan-login> – password reset ceremony', () => {
+  let el: HTMLElement;
+
+  beforeEach(async () => {
+    localStorage.clear();
+    fetchMock.mockImplementation(defaultFetch);
+    el = await mountWidget();
+  });
+
+  afterEach(() => {
+    if (el?.isConnected) document.body.removeChild(el);
+    fetchMock.mockReset();
+    localStorage.clear();
+  });
+
+  function callsTo(fragment: string) {
+    return fetchMock.mock.calls.filter(([url]) => String(url).includes(fragment));
+  }
+
+  async function openResetCode() {
+    const sr = shadow(el);
+    userTyping(sr.querySelector<HTMLInputElement>('input[type="text"]')!, 'user@example.com');
+    const forgot = Array.from(sr.querySelectorAll<HTMLAnchorElement>('a.centered-text'))
+      .find((link) => link.textContent?.includes('Forgot your password'));
+    forgot!.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true, cancelable: true }));
+    await new Promise<void>((r) => setTimeout(r, 20));
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/api/v1/password/reset/begin')) {
+        return Promise.resolve(makeJsonResponse({ message: 'ok' }));
+      }
+      return defaultFetch(String(url));
+    });
+    shadow(el).querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+  }
+
+  async function submitResetCode() {
+    const sr = shadow(el);
+    userTyping(sr.querySelector<HTMLInputElement>('input[placeholder="Reset Code"]')!, 'abc123');
+    userTyping(sr.querySelector<HTMLInputElement>('input[autocomplete="new-password"]')!, 'new-secret');
+    sr.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+  }
+
+  it('continues the ceremony when reset complete returns a transactionID', async () => {
+    await openResetCode();
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/api/v1/password/reset/complete')) {
+        return Promise.resolve(makeJsonResponse({ transactionID: 'tx-reset' }));
+      }
+      if (String(url).includes('/api/v1/login/password')) {
+        return Promise.resolve(makeJsonResponse({ token: 'reset-session-jwt', transactionID: 'tx-reset' }));
+      }
+      return defaultFetch(String(url));
+    });
+    await submitResetCode();
+
+    const completeIndex = fetchMock.mock.calls.findIndex(([url]) =>
+      String(url).includes('/api/v1/password/reset/complete'),
+    );
+    expect(completeIndex).toBeGreaterThanOrEqual(0);
+    const next = fetchMock.mock.calls[completeIndex + 1];
+    expect(next, 'password login follows reset complete').toBeDefined();
+    expect(String(next[0])).toContain('/api/v1/login/password');
+    expect(String(next[1].method).toLowerCase()).toBe('post');
+    expect(JSON.parse(String(next[1].body))).toEqual({
+      username: 'user@example.com',
+      password: 'new-secret',
+      sectorID: 'test-sector-id',
+      transactionID: 'tx-reset',
+    });
+    expect(localStorage.getItem('spartan-token')).toBe('reset-session-jwt');
+  });
+
+  it('shows the success text and does not log in when reset complete has no transactionID', async () => {
+    await openResetCode();
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/api/v1/password/reset/complete')) {
+        return Promise.resolve(makeJsonResponse({ message: 'ok' }));
+      }
+      if (String(url).includes('/api/v1/login/password')) {
+        return Promise.resolve(makeJsonResponse({ token: 'should-not-store' }));
+      }
+      return defaultFetch(String(url));
+    });
+    await submitResetCode();
+
+    expect(callsTo('/api/v1/login/password')).toHaveLength(0);
+    expect(shadow(el).textContent).toContain('Password reset successfully! You can now log in.');
+    expect(localStorage.getItem('spartan-token') || '').toBe('');
+  });
+
+  it('omits transactionID on a normal password submit even when a ceremony id is stored', async () => {
+    localStorage.setItem('spartan-txid', 'tx-leftover');
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/api/v1/login/password')) {
+        return Promise.resolve(makeJsonResponse({ token: 'tok', transactionID: 'tx-leftover' }));
+      }
+      return defaultFetch(String(url));
+    });
+    const sr = shadow(el);
+    userTyping(sr.querySelector<HTMLInputElement>('input[type="text"]')!, 'user@example.com');
+    userTyping(sr.querySelector<HTMLInputElement>('input[type="password"]')!, 'secret');
+    sr.querySelector<HTMLFormElement>('form')!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    await new Promise<void>((r) => setTimeout(r, 40));
+
+    const call = callsTo('/api/v1/login/password')[0];
+    expect(call, 'password login request').toBeDefined();
+    const body = JSON.parse(String(call[1].body));
+    expect(body).toEqual({
+      username: 'user@example.com',
+      password: 'secret',
+      sectorID: 'test-sector-id',
+    });
+    expect(body.transactionID).toBeUndefined();
+  });
+});
